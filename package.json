@@ -1,0 +1,26 @@
+{
+  "name": "piyo-mcp",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "description": "Read-only remote MCP server for a PiyoLog family data feed, hosted on Cloudflare Workers.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "start": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^0.10.3",
+    "@modelcontextprotocol/server": "2.0.0",
+    "agents": "^0.20.1",
+    "hono": "^4.12.27",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "wrangler": "^4.105.0"
+  }
+}

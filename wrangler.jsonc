@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "piyo-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-21",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "kv_namespaces": [
+    {
+      // Forks: create your own namespace (`npx wrangler kv namespace create OAUTH_KV`)
+      // and replace this id. The current value is the maintainer's production KV.
+      "binding": "OAUTH_KV",
+      "id": "f19eec5043ed4d86bf35c8d3fb59e23b",
+      "preview_id": "local-oauth-kv",
+    },
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+  "workers_dev": true,
+  "preview_urls": true,
+  "dev": {
+    "port": 8787,
+  },
+}
