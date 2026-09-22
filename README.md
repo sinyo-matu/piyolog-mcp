@@ -66,6 +66,21 @@ npx wrangler deploy
 
 接続 URL は `https://<name>.<account>.workers.dev/mcp` です。Claude Desktop のコネクタ、または ChatGPT のカスタム MCP / プラグインから追加し、家族パスワードで許可します。
 
+## GitHub Actions でのデプロイ
+
+`main` への push で type-check のあと Cloudflare Workers にデプロイします。PR では type-check だけです。Worker の `FAMILY_PASSWORD` などは GitHub には置かず、Cloudflare 側の既存シークレットを `--keep-vars` で残します。
+
+リポジトリの Settings → Secrets and variables → Actions に次を追加してください。
+
+1. [API token](https://dash.cloudflare.com/profile/api-tokens) を「Edit Cloudflare Workers」テンプレートで作成する
+2. `CLOUDFLARE_API_TOKEN` にそのトークン
+3. `CLOUDFLARE_ACCOUNT_ID` にダッシュボード右サイドバーの Account ID
+
+```bash
+gh secret set CLOUDFLARE_API_TOKEN
+gh secret set CLOUDFLARE_ACCOUNT_ID
+```
+
 ## 開発
 
 ```bash

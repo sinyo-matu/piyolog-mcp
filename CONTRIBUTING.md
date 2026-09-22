@@ -8,5 +8,6 @@
 2. `npm install` と `npm run type-check`
 3. 挙動を変える場合は、未認証 Claude 向け HTTP 401 と ChatGPT 向け JSON のみの `tools/list` を壊さない
 4. シークレットや `wrangler.jsonc` の他人の KV ID を自分の本番値に戻してコミットしない（フォーク用に置き換えた変更は PR に入れない）
+5. 本番デプロイは `main` への merge だけ。PR では Worker を上書きしない
 
 プルリクエストでは、何を変えたかと、手元でどう確認したかを短く書いてください。
