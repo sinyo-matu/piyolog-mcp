@@ -24,7 +24,7 @@
   },
   "secrets": {
     "required": [
-      "FAMILY_PASSWORD",
+      "AUTH_PASSWORD",
       "COOKIE_ENCRYPTION_KEY",
       "PIYOLOG_FEED_URL",
       "CHILD_NAME",

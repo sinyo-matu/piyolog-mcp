@@ -1,6 +1,6 @@
 import type { AuthRequest, OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { Hono } from "hono";
-import { verifyFamilyPassword } from "./auth";
+import { verifyAuthPassword } from "./auth";
 import { childName } from "./config";
 import { cookieFlags, cookieName, readCookie, signaturesEqual, signValue } from "./crypto";
 import { authorizePage, authorizeRedirectPage, homePage } from "./html";
@@ -128,7 +128,7 @@ app.post("/authorize", async (c) => {
     return fail("認可セッションが切れました。Claude Desktop の連携ボタンからやり直してください。");
   }
   const password = String(form.get("password") ?? "");
-  if (!(await verifyFamilyPassword(c.env, password))) {
+  if (!(await verifyAuthPassword(c.env, password))) {
     return fail("パスワードが違います。");
   }
 

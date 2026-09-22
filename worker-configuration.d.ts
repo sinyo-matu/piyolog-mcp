@@ -3,7 +3,7 @@
 // Runtime types generated with workerd@1.20260918.1 2026-09-21 global_fetch_strictly_public,nodejs_compat
 interface __BaseEnv_Env {
 	OAUTH_KV: KVNamespace;
-	FAMILY_PASSWORD: string;
+	AUTH_PASSWORD: string;
 	COOKIE_ENCRYPTION_KEY: string;
 	PIYOLOG_FEED_URL: string;
 	CHILD_NAME?: string;
@@ -19,7 +19,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "FAMILY_PASSWORD" | "COOKIE_ENCRYPTION_KEY" | "PIYOLOG_FEED_URL" | "CHILD_NAME">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "AUTH_PASSWORD" | "COOKIE_ENCRYPTION_KEY" | "PIYOLOG_FEED_URL" | "CHILD_NAME">> {}
 }
 
 // Begin runtime types

@@ -41,7 +41,7 @@ cp .dev.vars.example .dev.vars
 `.dev.vars` を自分の値に書き換えます。
 
 ```
-FAMILY_PASSWORD=        # 家族で共有するパスワード
+AUTH_PASSWORD=        # 家族で共有するパスワード
 COOKIE_ENCRYPTION_KEY=  # openssl rand -hex 32
 PIYOLOG_FEED_URL=       # ぴよログ Data Feed の URL
 CHILD_NAME=Baby         # ツール説明に出す呼び名。実名は任意
@@ -57,7 +57,7 @@ npm run dev
 本番:
 
 ```bash
-npx wrangler secret put FAMILY_PASSWORD
+npx wrangler secret put AUTH_PASSWORD
 npx wrangler secret put COOKIE_ENCRYPTION_KEY
 npx wrangler secret put PIYOLOG_FEED_URL
 npx wrangler secret put CHILD_NAME
@@ -76,7 +76,7 @@ npx wrangler deploy
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | Workers デプロイ用。ダッシュボードの「Edit Cloudflare Workers」テンプレート |
 | `CLOUDFLARE_ACCOUNT_ID` | ダッシュボード右サイドバーの Account ID |
-| `FAMILY_PASSWORD` | 家族パスワード |
+| `AUTH_PASSWORD` | 家族パスワード |
 | `COOKIE_ENCRYPTION_KEY` | OAuth 用署名鍵 |
 | `PIYOLOG_FEED_URL` | ぴよログ Data Feed の URL |
 | `CHILD_NAME` | ツール説明の呼び名 |
@@ -84,7 +84,7 @@ npx wrangler deploy
 ```bash
 gh secret set CLOUDFLARE_API_TOKEN
 gh secret set CLOUDFLARE_ACCOUNT_ID
-gh secret set FAMILY_PASSWORD
+gh secret set AUTH_PASSWORD
 gh secret set COOKIE_ENCRYPTION_KEY
 gh secret set PIYOLOG_FEED_URL
 gh secret set CHILD_NAME

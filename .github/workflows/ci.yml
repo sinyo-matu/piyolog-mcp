@@ -31,13 +31,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check GitHub secrets
         env:
-          FAMILY_PASSWORD: ${{ secrets.FAMILY_PASSWORD }}
+          AUTH_PASSWORD: ${{ secrets.AUTH_PASSWORD }}
           COOKIE_ENCRYPTION_KEY: ${{ secrets.COOKIE_ENCRYPTION_KEY }}
           PIYOLOG_FEED_URL: ${{ secrets.PIYOLOG_FEED_URL }}
           CHILD_NAME: ${{ secrets.CHILD_NAME }}
         run: |
           missing=
-          for key in FAMILY_PASSWORD COOKIE_ENCRYPTION_KEY PIYOLOG_FEED_URL CHILD_NAME; do
+          for key in AUTH_PASSWORD COOKIE_ENCRYPTION_KEY PIYOLOG_FEED_URL CHILD_NAME; do
             eval "value=\${$key}"
             if [ -z "$value" ]; then
               missing="$missing $key"
@@ -56,12 +56,12 @@ jobs:
           packageManager: npm
           command: deploy --keep-vars
           secrets: |
-            FAMILY_PASSWORD
+            AUTH_PASSWORD
             COOKIE_ENCRYPTION_KEY
             PIYOLOG_FEED_URL
             CHILD_NAME
         env:
-          FAMILY_PASSWORD: ${{ secrets.FAMILY_PASSWORD }}
+          AUTH_PASSWORD: ${{ secrets.AUTH_PASSWORD }}
           COOKIE_ENCRYPTION_KEY: ${{ secrets.COOKIE_ENCRYPTION_KEY }}
           PIYOLOG_FEED_URL: ${{ secrets.PIYOLOG_FEED_URL }}
           CHILD_NAME: ${{ secrets.CHILD_NAME }}

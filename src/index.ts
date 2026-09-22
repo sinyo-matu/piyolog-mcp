@@ -1,6 +1,6 @@
 import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
 import { app } from "./app";
-import { verifyFamilyPassword } from "./auth";
+import { verifyAuthPassword } from "./auth";
 import { toolsCheckPage, type ChatgptScanReport, type ChatgptToolAd } from "./html";
 import { handleMcp } from "./mcp";
 
@@ -46,7 +46,7 @@ const oauth = new OAuthProvider({
     resource_name: "ぴよログ家族MCP",
   },
   resolveExternalToken: async ({ token, env }) => {
-    if (!(await verifyFamilyPassword(env, token))) {
+    if (!(await verifyAuthPassword(env, token))) {
       return null;
     }
     return { props: { family: true } };
