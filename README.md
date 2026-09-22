@@ -1,6 +1,6 @@
 # piyo-mcp
 
-Cloudflare Workers 上の、ぴよログ Data Feed 向け **読み取り専用 MCP サーバー**です。Claude Desktop / ChatGPT などから授乳・睡眠・おむつの記録を分析できます。閲覧用の Web ダッシュボードはありません。
+Cloudflare Workers 上の、ぴよログ Data Feed 向け **読み取り専用 MCP サーバー**です。Claude Desktop / ChatGPT などから授乳・睡眠・おむつの記録を分析できます。
 
 このリポジトリは **自分でセルフホストする** ためのものです。他人の育児記録を集める SaaS ではありません。
 
@@ -69,7 +69,7 @@ npx wrangler deploy
 
 ## GitHub Actions でのデプロイ
 
-`main` への push で type-check のあと、GitHub のリポジトリシークレットを Cloudflare Worker secrets に載せてデプロイします。PR では type-check だけです。パスワードなどの値は `wrangler.jsonc` には書きません（名前だけ `secrets.required` に列挙します）。再認証までの秒数 `AUTH_TTL_SECONDS` は秘密ではないので、`wrangler.jsonc` の `vars` にデフォルト（180日）を置き、GitHub の Actions variable で上書きできます。
+`main` への push で type-check のあと、GitHub のリポジトリシークレットを Cloudflare Worker secrets に載せてデプロイします。再認証までの秒数 `AUTH_TTL_SECONDS` は秘密ではないので、`wrangler.jsonc` の `vars` にデフォルト（180日）を置き、GitHub の Actions variable で上書きできます。
 
 リポジトリの Settings → Secrets and variables → Actions に次を追加してください。
 
