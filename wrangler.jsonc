@@ -22,6 +22,10 @@
   "dev": {
     "port": 8787,
   },
+  "vars": {
+    // Access / refresh / DCR lifetime in seconds. Default is 180 days.
+    "AUTH_TTL_SECONDS": "15552000",
+  },
   "secrets": {
     "required": [
       "AUTH_PASSWORD",

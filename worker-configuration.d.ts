@@ -7,6 +7,7 @@ interface __BaseEnv_Env {
 	COOKIE_ENCRYPTION_KEY: string;
 	PIYOLOG_FEED_URL: string;
 	CHILD_NAME?: string;
+	AUTH_TTL_SECONDS?: string;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
@@ -19,7 +20,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "AUTH_PASSWORD" | "COOKIE_ENCRYPTION_KEY" | "PIYOLOG_FEED_URL" | "CHILD_NAME">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "AUTH_PASSWORD" | "COOKIE_ENCRYPTION_KEY" | "PIYOLOG_FEED_URL" | "CHILD_NAME" | "AUTH_TTL_SECONDS">> {}
 }
 
 // Begin runtime types

@@ -93,7 +93,7 @@ export function homePage(origin: string, child = "Baby"): Response {
     <h1>${escapeHtml(child)}のぴよログ MCP</h1>
     <p>記録の確認は Claude または ChatGPT から行います。このサイトに閲覧用の画面はありません。</p>
     <div class="client">接続先<br><code>${escapeHtml(mcp)}</code></div>
-    <p>家族パスワードは、各アプリの連携画面で入力してください。</p>
+    <p>パスワードは、各アプリの連携画面で入力してください。</p>
   `,
   );
   return new Response(html, { headers: LOGIN_HEADERS });
@@ -235,7 +235,7 @@ export function authorizePage(options: {
   const html = page(
     "連携の許可",
     `
-    <h1>家族記録へのアクセス</h1>
+    <h1>記録へのアクセス</h1>
     <p>Claude Desktop から開いた場合も、この画面で許可する必要があります。許可すると Claude に戻り、コネクタの連携が完了します。</p>
     <div class="client">接続元: ${escapeHtml(options.clientName)}${host ? `<br>戻り先: ${escapeHtml(host)}` : ""}${loopback ? `<br>これはパソコン上のアプリ向けです。Claude Desktop のコネクタは戻り先が claude.ai のときに更新されます。` : ""}</div>
     ${options.error ? `<p class="error">${escapeHtml(options.error)}</p>` : ""}

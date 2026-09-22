@@ -2,3 +2,4 @@ AUTH_PASSWORD=change-me
 COOKIE_ENCRYPTION_KEY=replace-with-openssl-rand-hex-32
 PIYOLOG_FEED_URL=https://feed.piyolog.com/v1/feed/28d/FEED_ID/SECRET
 CHILD_NAME=Baby
+# AUTH_TTL_SECONDS=15552000

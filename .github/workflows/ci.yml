@@ -60,8 +60,11 @@ jobs:
             COOKIE_ENCRYPTION_KEY
             PIYOLOG_FEED_URL
             CHILD_NAME
+          vars: |
+            AUTH_TTL_SECONDS
         env:
           AUTH_PASSWORD: ${{ secrets.AUTH_PASSWORD }}
           COOKIE_ENCRYPTION_KEY: ${{ secrets.COOKIE_ENCRYPTION_KEY }}
           PIYOLOG_FEED_URL: ${{ secrets.PIYOLOG_FEED_URL }}
           CHILD_NAME: ${{ secrets.CHILD_NAME }}
+          AUTH_TTL_SECONDS: ${{ vars.AUTH_TTL_SECONDS || '15552000' }}
