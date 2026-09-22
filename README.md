@@ -2,12 +2,12 @@
 
 Cloudflare Workers 上の、ぴよログ Data Feed 向け **読み取り専用 MCP サーバー**です。Claude Desktop / ChatGPT などから授乳・睡眠・おむつの記録を分析できます。閲覧用の Web ダッシュボードはありません。
 
-このリポジトリは **自分の家族用にセルフホストする** ためのものです。他人の育児記録を集める SaaS ではありません。
+このリポジトリは **自分でセルフホストする** ためのものです。他人の育児記録を集める SaaS ではありません。
 
 ## 注意
 
-- 乳児の健康記録を LLM に渡します。家族の同意と、ぴよログの利用規約を確認してください。
-- 共有の家族パスワードを知っている人は、フィード期間内の全記録を読めます。
+- 乳児の健康記録を LLM に渡します。同意と、ぴよログの利用規約を確認してください。
+- パスワードを知っている人は、フィード期間内の全記録を読めます。
 - サンプルデータや実名を Issue / PR / README に貼らないでください。
 - ぴよログは第三者サービスです。本プロジェクトは非公式です。
 
@@ -41,10 +41,11 @@ cp .dev.vars.example .dev.vars
 `.dev.vars` を自分の値に書き換えます。
 
 ```
-AUTH_PASSWORD=        # 家族で共有するパスワード
+AUTH_PASSWORD=        # 認証用のパスワード
 COOKIE_ENCRYPTION_KEY=  # openssl rand -hex 32
 PIYOLOG_FEED_URL=       # ぴよログ Data Feed の URL
 CHILD_NAME=Baby         # ツール説明に出す呼び名。実名は任意
+AUTH_TTL_SECONDS=15552000  # 再認証までの秒。未設定なら半年（180日）
 ```
 
 KV を作り、`wrangler.jsonc` の `OAUTH_KV.id` を自分の ID に差し替えます。メンテナの本番 ID が残っているので、フォークしたら必ず置き換えてください。
@@ -64,11 +65,11 @@ npx wrangler secret put CHILD_NAME
 npx wrangler deploy
 ```
 
-接続 URL は `https://<name>.<account>.workers.dev/mcp` です。Claude Desktop のコネクタ、または ChatGPT のカスタム MCP / プラグインから追加し、家族パスワードで許可します。
+接続 URL は `https://<name>.<account>.workers.dev/mcp` です。Claude Desktop のコネクタ、または ChatGPT のカスタム MCP / プラグインから追加し、パスワードで許可します。
 
 ## GitHub Actions でのデプロイ
 
-`main` への push で type-check のあと、GitHub のリポジトリシークレットを Cloudflare Worker secrets に載せてデプロイします。PR では type-check だけです。値は `wrangler.jsonc` には書きません（名前だけ `secrets.required` に列挙します）。
+`main` への push で type-check のあと、GitHub のリポジトリシークレットを Cloudflare Worker secrets に載せてデプロイします。PR では type-check だけです。パスワードなどの値は `wrangler.jsonc` には書きません（名前だけ `secrets.required` に列挙します）。再認証までの秒数 `AUTH_TTL_SECONDS` は秘密ではないので、`wrangler.jsonc` の `vars` にデフォルト（180日）を置き、GitHub の Actions variable で上書きできます。
 
 リポジトリの Settings → Secrets and variables → Actions に次を追加してください。
 
@@ -76,10 +77,11 @@ npx wrangler deploy
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | Workers デプロイ用。ダッシュボードの「Edit Cloudflare Workers」テンプレート |
 | `CLOUDFLARE_ACCOUNT_ID` | ダッシュボード右サイドバーの Account ID |
-| `AUTH_PASSWORD` | 家族パスワード |
+| `AUTH_PASSWORD` | 認証パスワード |
 | `COOKIE_ENCRYPTION_KEY` | OAuth 用署名鍵 |
 | `PIYOLOG_FEED_URL` | ぴよログ Data Feed の URL |
 | `CHILD_NAME` | ツール説明の呼び名 |
+| `AUTH_TTL_SECONDS` | 再認証までの秒（Actions **variable**。未設定なら 15552000 = 180日） |
 
 ```bash
 gh secret set CLOUDFLARE_API_TOKEN
@@ -88,6 +90,8 @@ gh secret set AUTH_PASSWORD
 gh secret set COOKIE_ENCRYPTION_KEY
 gh secret set PIYOLOG_FEED_URL
 gh secret set CHILD_NAME
+# 任意。未設定なら wrangler.jsonc の 180日
+# gh variable set AUTH_TTL_SECONDS --body 15552000
 ```
 
 未設定のまま `main` に push すると、空の値で本番シークレットを上書きしないようデプロイ前に失敗します。ローカルの `wrangler dev` はこれまでどおり `.dev.vars` を読みます。

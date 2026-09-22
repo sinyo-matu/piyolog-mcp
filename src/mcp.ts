@@ -86,13 +86,13 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
   const handler = createMcpHandler(() => {
     const server = new McpServer(
       {
-        name: "piyolog-family",
+        name: "piyo-mcp",
         version: "1.2.0",
         description: `${child}のぴよログ読み取り。授乳・睡眠・おむつの記録を ChatGPT が直接分析する。`,
       },
       {
         instructions:
-          `${child}のぴよログ読み取り専用。分析は get_all_records。今日は get_today_records。最新は get_latest_status。日付指定の食事は get_feeding_records。search/fetch は記録の検索用。母乳mlは記録があるときだけ使い、授乳時間から推定しない。呼び出し前に家族OAuthが必要。`,
+          `${child}のぴよログ読み取り専用。分析は get_all_records。今日は get_today_records。最新は get_latest_status。日付指定の食事は get_feeding_records。search/fetch は記録の検索用。母乳mlは記録があるときだけ使い、授乳時間から推定しない。呼び出し前にOAuthが必要。`,
       },
     );
 

@@ -1,6 +1,7 @@
 import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
 import { app } from "./app";
 import { verifyAuthPassword } from "./auth";
+import { authTtlSeconds } from "./config";
 import { toolsCheckPage, type ChatgptScanReport, type ChatgptToolAd } from "./html";
 import { handleMcp } from "./mcp";
 
@@ -27,31 +28,37 @@ const EXPECTED_TOOLS = [
   "fetch",
 ];
 
-const oauth = new OAuthProvider({
-  apiRoute: "/mcp",
-  apiHandler: {
-    fetch: (request, env, ctx) => handleMcp(request, env, ctx),
-  },
-  defaultHandler: {
-    fetch: (request, env, ctx) => app.fetch(request, env, ctx),
-  },
-  authorizeEndpoint: "/authorize",
-  tokenEndpoint: "/oauth/token",
-  clientRegistrationEndpoint: "/oauth/register",
-  scopesSupported: ["mcp:read"],
-  clientIdMetadataDocumentEnabled: true,
-  resourceMetadata: {
-    scopes_supported: ["mcp:read"],
-    bearer_methods_supported: ["header"],
-    resource_name: "ぴよログ家族MCP",
-  },
-  resolveExternalToken: async ({ token, env }) => {
-    if (!(await verifyAuthPassword(env, token))) {
-      return null;
-    }
-    return { props: { family: true } };
-  },
-});
+function oauthProvider(env: Env) {
+  const ttl = authTtlSeconds(env);
+  return new OAuthProvider({
+    apiRoute: "/mcp",
+    apiHandler: {
+      fetch: (request, env, ctx) => handleMcp(request, env, ctx),
+    },
+    defaultHandler: {
+      fetch: (request, env, ctx) => app.fetch(request, env, ctx),
+    },
+    authorizeEndpoint: "/authorize",
+    tokenEndpoint: "/oauth/token",
+    clientRegistrationEndpoint: "/oauth/register",
+    accessTokenTTL: ttl,
+    refreshTokenTTL: ttl,
+    clientRegistrationTTL: ttl,
+    scopesSupported: ["mcp:read"],
+    clientIdMetadataDocumentEnabled: true,
+    resourceMetadata: {
+      scopes_supported: ["mcp:read"],
+      bearer_methods_supported: ["header"],
+      resource_name: "ぴよログ MCP",
+    },
+    resolveExternalToken: async ({ token, env }) => {
+      if (!(await verifyAuthPassword(env, token))) {
+        return null;
+      }
+      return { props: { family: true } };
+    },
+  });
+}
 
 function corsHeaders(request: Request): Headers {
   const headers = new Headers();
@@ -164,7 +171,7 @@ async function serveMcp(request: Request, env: Env, ctx: ExecutionContext): Prom
   const response =
     chatgptScan && method !== null && DISCOVERY_METHODS.has(method)
       ? await handleMcp(accepted, env, ctx)
-      : await oauth.fetch(accepted, env, ctx);
+      : await oauthProvider(env).fetch(accepted, env, ctx);
   return withCors(request, await annotateToolSecurity(await asJsonIfNeeded(request, response)));
 }
 
@@ -332,7 +339,7 @@ export default {
       return serveMcp(request, env, ctx);
     }
 
-    const response = await oauth.fetch(request, env, ctx);
+    const response = await oauthProvider(env).fetch(request, env, ctx);
     if (url.pathname === "/oauth/token") {
       return withBearerTokenType(response);
     }
