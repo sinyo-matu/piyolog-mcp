@@ -29,6 +29,25 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Check GitHub secrets
+        env:
+          FAMILY_PASSWORD: ${{ secrets.FAMILY_PASSWORD }}
+          COOKIE_ENCRYPTION_KEY: ${{ secrets.COOKIE_ENCRYPTION_KEY }}
+          PIYOLOG_FEED_URL: ${{ secrets.PIYOLOG_FEED_URL }}
+          CHILD_NAME: ${{ secrets.CHILD_NAME }}
+        run: |
+          missing=
+          for key in FAMILY_PASSWORD COOKIE_ENCRYPTION_KEY PIYOLOG_FEED_URL CHILD_NAME; do
+            eval "value=\${$key}"
+            if [ -z "$value" ]; then
+              missing="$missing $key"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "GitHub Actions secrets が未設定です:$missing"
+            echo "gh secret set <NAME> で入れてから workflow を再実行してください。"
+            exit 1
+          fi
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v4
         with:
@@ -36,3 +55,13 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           packageManager: npm
           command: deploy --keep-vars
+          secrets: |
+            FAMILY_PASSWORD
+            COOKIE_ENCRYPTION_KEY
+            PIYOLOG_FEED_URL
+            CHILD_NAME
+        env:
+          FAMILY_PASSWORD: ${{ secrets.FAMILY_PASSWORD }}
+          COOKIE_ENCRYPTION_KEY: ${{ secrets.COOKIE_ENCRYPTION_KEY }}
+          PIYOLOG_FEED_URL: ${{ secrets.PIYOLOG_FEED_URL }}
+          CHILD_NAME: ${{ secrets.CHILD_NAME }}

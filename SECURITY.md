@@ -10,7 +10,7 @@ piyo-mcp は乳児の健康記録を扱うセルフホスト MCP です。公開
 
 ## 運用上の注意
 
-- `FAMILY_PASSWORD` / `COOKIE_ENCRYPTION_KEY` / `PIYOLOG_FEED_URL` は Worker secrets に置く。リポジトリやスクリーンショットに出さない。
+- `FAMILY_PASSWORD` / `COOKIE_ENCRYPTION_KEY` / `PIYOLOG_FEED_URL` / `CHILD_NAME` は Worker secrets に置く。リポジトリやスクリーンショットに出さない。CI から載せる場合は GitHub Actions の repository secrets に同じ名前で入れる。
 - パスワードやフィード URL が漏れたら、両方をローテし、必要なら OAuth KV の grant を消す。
 - 母乳量は記録された ml だけを使い、授乳時間から推定しません。
 

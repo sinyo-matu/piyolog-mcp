@@ -68,18 +68,29 @@ npx wrangler deploy
 
 ## GitHub Actions でのデプロイ
 
-`main` への push で type-check のあと Cloudflare Workers にデプロイします。PR では type-check だけです。Worker の `FAMILY_PASSWORD` などは GitHub には置かず、Cloudflare 側の既存シークレットを `--keep-vars` で残します。
+`main` への push で type-check のあと、GitHub のリポジトリシークレットを Cloudflare Worker secrets に載せてデプロイします。PR では type-check だけです。値は `wrangler.jsonc` には書きません（名前だけ `secrets.required` に列挙します）。
 
 リポジトリの Settings → Secrets and variables → Actions に次を追加してください。
 
-1. [API token](https://dash.cloudflare.com/profile/api-tokens) を「Edit Cloudflare Workers」テンプレートで作成する
-2. `CLOUDFLARE_API_TOKEN` にそのトークン
-3. `CLOUDFLARE_ACCOUNT_ID` にダッシュボード右サイドバーの Account ID
+| 名前 | 用途 |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Workers デプロイ用。ダッシュボードの「Edit Cloudflare Workers」テンプレート |
+| `CLOUDFLARE_ACCOUNT_ID` | ダッシュボード右サイドバーの Account ID |
+| `FAMILY_PASSWORD` | 家族パスワード |
+| `COOKIE_ENCRYPTION_KEY` | OAuth 用署名鍵 |
+| `PIYOLOG_FEED_URL` | ぴよログ Data Feed の URL |
+| `CHILD_NAME` | ツール説明の呼び名 |
 
 ```bash
 gh secret set CLOUDFLARE_API_TOKEN
 gh secret set CLOUDFLARE_ACCOUNT_ID
+gh secret set FAMILY_PASSWORD
+gh secret set COOKIE_ENCRYPTION_KEY
+gh secret set PIYOLOG_FEED_URL
+gh secret set CHILD_NAME
 ```
+
+未設定のまま `main` に push すると、空の値で本番シークレットを上書きしないようデプロイ前に失敗します。ローカルの `wrangler dev` はこれまでどおり `.dev.vars` を読みます。
 
 ## 開発
 
