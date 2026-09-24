@@ -92,7 +92,7 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
       },
       {
         instructions:
-          `${child}のぴよログ読み取り専用。分析は get_all_records。今日は get_today_records。最新は get_latest_status。日付指定の食事は get_feeding_records。search/fetch は記録の検索用。母乳mlは記録があるときだけ使い、授乳時間から推定しない。呼び出し前にOAuthが必要。`,
+          `${child}のぴよログ読み取り専用。フィードは直近28日だが、それより前の記録はこちらに残してある。分析は get_all_records。今日は get_today_records。最新は get_latest_status。日付指定の食事は get_feeding_records。search/fetch は記録の検索用。母乳mlは記録があるときだけ使い、授乳時間から推定しない。呼び出し前にOAuthが必要。`,
       },
     );
 
@@ -183,7 +183,7 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
       {
         title: "全期間の記録",
         description:
-          `Use this when ChatGPT should analyze ${child}'s full feed history itself. Returns every record in the feed window as JSON. No arguments.`,
+          `Use this when ChatGPT should analyze ${child}'s stored history itself. Returns every saved record, including days older than the 28-day feed. No arguments.`,
         inputSchema: emptyInput,
         outputSchema: recordsOutput,
         annotations: readOnly,
