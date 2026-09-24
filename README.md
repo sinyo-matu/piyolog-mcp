@@ -7,7 +7,7 @@ Cloudflare Workers 上の、ぴよログ Data Feed 向け **読み取り専用 M
 ## 注意
 
 - 乳児の健康記録を LLM に渡します。同意と、ぴよログの利用規約を確認してください。
-- パスワードを知っている人は、フィード期間内の全記録を読めます。
+- パスワードを知っている人は、保存済みの全記録を読めます。フィード自体は直近最大28日です。
 - サンプルデータや実名を Issue / PR / README に貼らないでください。
 - ぴよログは第三者サービスです。本プロジェクトは非公式です。
 
@@ -20,10 +20,12 @@ MCP エンドポイント: `https://<your-worker>.workers.dev/mcp`
 | `get_today_records` | 今日（JST）の全記録 JSON |
 | `get_latest_status` | 最新の授乳・睡眠・おむつ・体重 |
 | `get_feeding_records` | 指定日の食事・授乳 |
-| `get_all_records` | フィード期間内の全件（分析用） |
+| `get_all_records` | 保存済みの全件（分析用。28日を過ぎた記録も含む） |
 | `search` / `fetch` | 記録の検索と取得 |
 
 母乳の ml は記録があるときだけ使い、授乳時間から推定しません。
+
+ぴよログのフィードは最大で過去28日分です。取得のたびに、その範囲より前の記録を Worker の KV に月ごとに残します。導入前にフィードから落ちた記録は復元できません。フィードの範囲内の追加・修正・削除は次の取得で反映します。範囲外になったあとの修正・削除は分かりません。
 
 認証は OAuth 2.1（PKCE S256、Dynamic Client Registration）。ChatGPT のツール一覧スキャンは `Accept: application/json` のみでも `tools/list` が通ります。Claude コネクタは未認証 `/mcp` に HTTP 401 と `WWW-Authenticate` を返します。
 
