@@ -12,15 +12,13 @@ function htmlHeaders(formAction = "'self'"): HeadersInit {
 }
 
 const LOGIN_HEADERS = htmlHeaders("'self'");
-const AUTHORIZE_FORM_ACTION =
-  "'self' https://claude.ai https://claude.com https://chatgpt.com http://localhost:* http://127.0.0.1:*";
 
-// form-action also governs the redirect after the form posts, so the client's
-// own redirect_uri (already checked against its registration) must be allowed,
-// e.g. other web clients or app callbacks like `muse://`.
+// form-action also governs the redirect after the form posts, so only the
+// client's own redirect_uri (already checked against its registration) is
+// allowed besides 'self', e.g. claude.ai or app callbacks like `muse://`.
 function authorizeHeaders(redirectUri?: string): HeadersInit {
   const source = redirectSource(redirectUri);
-  return htmlHeaders(source ? `${AUTHORIZE_FORM_ACTION} ${source}` : AUTHORIZE_FORM_ACTION);
+  return htmlHeaders(source ? `'self' ${source}` : "'self'");
 }
 
 function redirectSource(redirectUri?: string): string {
