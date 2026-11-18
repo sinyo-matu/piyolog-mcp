@@ -12,9 +12,32 @@ function htmlHeaders(formAction = "'self'"): HeadersInit {
 }
 
 const LOGIN_HEADERS = htmlHeaders("'self'");
-const AUTHORIZE_HEADERS = htmlHeaders(
-  "'self' https://claude.ai https://claude.com https://chatgpt.com http://localhost:* http://127.0.0.1:*",
-);
+const AUTHORIZE_FORM_ACTION =
+  "'self' https://claude.ai https://claude.com https://chatgpt.com http://localhost:* http://127.0.0.1:*";
+
+// form-action also governs the redirect after the form posts, so the client's
+// own redirect_uri (already checked against its registration) must be allowed,
+// e.g. other web clients or app callbacks like `muse://`.
+function authorizeHeaders(redirectUri?: string): HeadersInit {
+  const source = redirectSource(redirectUri);
+  return htmlHeaders(source ? `${AUTHORIZE_FORM_ACTION} ${source}` : AUTHORIZE_FORM_ACTION);
+}
+
+function redirectSource(redirectUri?: string): string {
+  if (!redirectUri) {
+    return "";
+  }
+  try {
+    const url = new URL(redirectUri);
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      // URL accepts hosts like `a;b`, which would inject CSP directives.
+      return /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(url.origin) ? url.origin : "";
+    }
+    return /^[a-z][a-z0-9+.-]*:$/i.test(url.protocol) ? url.protocol : "";
+  } catch {
+    return "";
+  }
+}
 
 function page(title: string, body: string): string {
   return `<!doctype html>
@@ -247,7 +270,7 @@ export function authorizePage(options: {
     </form>
   `,
   );
-  return new Response(html, { headers: AUTHORIZE_HEADERS });
+  return new Response(html, { headers: authorizeHeaders(options.redirectUri) });
 }
 
 export function authorizeRedirectPage(redirectTo: string): Response {
@@ -262,7 +285,7 @@ export function authorizeRedirectPage(redirectTo: string): Response {
   return new Response(html.replace("<head>", `<head>\n  <meta http-equiv="refresh" content="0;url=${escapeHtml(redirectTo)}" />`), {
     status: 303,
     headers: {
-      ...AUTHORIZE_HEADERS,
+      ...authorizeHeaders(redirectTo),
       Location: redirectTo,
     },
   });
