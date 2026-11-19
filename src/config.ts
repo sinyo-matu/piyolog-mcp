@@ -9,6 +9,10 @@ export function childName(env: Env): string {
   return value && value.length > 0 ? value : DEFAULT_CHILD_NAME;
 }
 
+/**
+ * アクセストークン・リフレッシュトークン・DCR クライアントの有効期間 (秒)。
+ * 不正な値や KV の最小 TTL (60 秒) 未満の値は無視して既定値を使う。
+ */
 export function authTtlSeconds(env: Env): number {
   const raw = env.AUTH_TTL_SECONDS?.trim();
   if (!raw) {
