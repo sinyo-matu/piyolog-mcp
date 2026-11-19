@@ -1,6 +1,5 @@
 import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
 import { app } from "./app";
-import { verifyAuthPassword } from "./auth";
 import { authTtlSeconds } from "./config";
 import { toolsCheckPage, type ChatgptScanReport, type ChatgptToolAd } from "./html";
 import { handleMcp } from "./mcp";
@@ -28,6 +27,11 @@ const EXPECTED_TOOLS = [
   "fetch",
 ];
 
+/**
+ * OAuth 2.1 プロバイダーを組み立てる。
+ * /mcp はアクセストークン必須の API として保護し、それ以外 (/authorize など) は Hono アプリに渡す。
+ * トークン発行・動的クライアント登録 (DCR)・メタデータ公開はライブラリが処理する。
+ */
 function oauthProvider(env: Env) {
   const ttl = authTtlSeconds(env);
   return new OAuthProvider({
@@ -45,17 +49,12 @@ function oauthProvider(env: Env) {
     refreshTokenTTL: ttl,
     clientRegistrationTTL: ttl,
     scopesSupported: ["mcp:read"],
+    // DCR を使わず、URL 形式の client_id (Client ID Metadata Document) で来るクライアントも受け付ける。
     clientIdMetadataDocumentEnabled: true,
     resourceMetadata: {
       scopes_supported: ["mcp:read"],
       bearer_methods_supported: ["header"],
       resource_name: "ぴよログ MCP",
-    },
-    resolveExternalToken: async ({ token, env }) => {
-      if (!(await verifyAuthPassword(env, token))) {
-        return null;
-      }
-      return { props: { family: true } };
     },
   });
 }
@@ -161,6 +160,11 @@ function isJsonOnlyAccept(request: Request): boolean {
   return accept.includes("application/json") && !accept.includes("text/event-stream");
 }
 
+/**
+ * /mcp の入口。通常は OAuthProvider 経由でトークンを検証してから MCP ハンドラーへ渡す。
+ * 例外として、未認証の ChatGPT スキャンによる探索系メソッド (DISCOVERY_METHODS) だけは
+ * 認証なしで直接応答する。tools/call などのデータ取得は必ず認証を通る。
+ */
 async function serveMcp(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const accepted = withMcpAccept(request);
   const authorized = Boolean(request.headers.get("Authorization"));
@@ -175,6 +179,8 @@ async function serveMcp(request: Request, env: Env, ctx: ExecutionContext): Prom
   return withCors(request, await annotateToolSecurity(await asJsonIfNeeded(request, response)));
 }
 
+// トークンレスポンスの token_type を "Bearer" 表記に揃える。
+// (大文字小文字を区別して比較するクライアントでも確実に通るようにするため)
 async function withBearerTokenType(response: Response): Promise<Response> {
   const contentType = response.headers.get("Content-Type") ?? "";
   if (response.status !== 200 || !contentType.includes("application/json")) {
