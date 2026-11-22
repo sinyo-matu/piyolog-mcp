@@ -25,6 +25,11 @@
   "vars": {
     // Access / refresh / DCR lifetime in seconds. Default is 180 days.
     "AUTH_TTL_SECONDS": "15552000",
+    // Google login (optional). Set the client id and at least one allowed
+    // Workspace domain or email; GOOGLE_CLIENT_SECRET goes in secrets.
+    "GOOGLE_CLIENT_ID": "",
+    "GOOGLE_ALLOWED_DOMAINS": "",
+    "GOOGLE_ALLOWED_EMAILS": "",
   },
   "secrets": {
     "required": [
@@ -32,6 +37,8 @@
       "COOKIE_ENCRYPTION_KEY",
       "PIYOLOG_FEED_URL",
       "CHILD_NAME",
+      // Optional: leave empty to disable Google login.
+      "GOOGLE_CLIENT_SECRET",
     ],
   },
 }

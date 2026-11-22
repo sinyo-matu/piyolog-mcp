@@ -16,10 +16,13 @@ const LOGIN_HEADERS = htmlHeaders("'self'");
 // form-action also governs the redirect after the form posts, so only the
 // client's own redirect_uri (already checked against its registration) is
 // allowed besides 'self', e.g. claude.ai or app callbacks like `muse://`.
-function authorizeHeaders(redirectUri?: string): HeadersInit {
-  const source = redirectSource(redirectUri);
-  return htmlHeaders(source ? `'self' ${source}` : "'self'");
+// With Google login on, the "Google でログイン" form redirects to accounts.google.com.
+function authorizeHeaders(redirectUri?: string, google = false): HeadersInit {
+  const sources = ["'self'", redirectSource(redirectUri), google ? GOOGLE_ACCOUNTS_ORIGIN : ""].filter(Boolean);
+  return htmlHeaders(sources.join(" "));
 }
+
+const GOOGLE_ACCOUNTS_ORIGIN = "https://accounts.google.com";
 
 function redirectSource(redirectUri?: string): string {
   if (!redirectUri) {
@@ -85,6 +88,8 @@ function page(title: string, body: string): string {
       font-weight: 600;
     }
     .error { color: #a12626; margin-bottom: 12px; }
+    button.google { background: #fff; color: #2c241c; border: 1px solid #e0d4c8; }
+    .or { text-align: center; font-size: 0.85rem; margin: 16px 0; }
     .client { background: #f7f1ea; border-radius: 12px; padding: 12px; margin-bottom: 16px; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; word-break: break-all; }
     a.button {
@@ -114,7 +119,7 @@ export function homePage(origin: string, child = "Baby"): Response {
     <h1>${escapeHtml(child)}のぴよログ MCP</h1>
     <p>記録の確認は Claude または ChatGPT から行います。このサイトに閲覧用の画面はありません。</p>
     <div class="client">接続先<br><code>${escapeHtml(mcp)}</code></div>
-    <p>パスワードは、各アプリの連携画面で入力してください。</p>
+    <p>パスワード（または許可された Google アカウント）は、各アプリの連携画面で入力してください。</p>
   `,
   );
   return new Response(html, { headers: LOGIN_HEADERS });
@@ -249,6 +254,7 @@ export function authorizePage(options: {
   oauthReq: string;
   clientName: string;
   redirectUri?: string;
+  google?: boolean;
   error?: string;
 }): Response {
   const host = redirectHost(options.redirectUri);
@@ -266,9 +272,18 @@ export function authorizePage(options: {
       <input id="password" name="password" type="password" autocomplete="current-password" required />
       <button type="submit">許可する</button>
     </form>
+    ${
+      options.google
+        ? `<p class="or">または</p>
+    <form method="post" action="/authorize/google">
+      <input type="hidden" name="oauth_req" value="${escapeHtml(options.oauthReq)}" />
+      <button type="submit" class="google">Google でログインして許可する</button>
+    </form>`
+        : ""
+    }
   `,
   );
-  return new Response(html, { headers: authorizeHeaders(options.redirectUri) });
+  return new Response(html, { headers: authorizeHeaders(options.redirectUri, options.google) });
 }
 
 export function authorizeRedirectPage(redirectTo: string): Response {

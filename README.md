@@ -7,7 +7,7 @@ Cloudflare Workers 上の、ぴよログ Data Feed 向け **読み取り専用 M
 ## 注意
 
 - 乳児の健康記録を LLM に渡します。同意と、ぴよログの利用規約を確認してください。
-- パスワードを知っている人は、保存済みの全記録を読めます。フィード自体は直近最大28日です。
+- パスワードを知っている人、または Google ログインで許可した組織・アカウントの人は、保存済みの全記録を読めます。フィード自体は直近最大28日です。
 - サンプルデータや実名を Issue / PR / README に貼らないでください。
 - ぴよログは第三者サービスです。本プロジェクトは非公式です。
 
@@ -69,6 +69,26 @@ npx wrangler deploy
 
 接続 URL は `https://<name>.<account>.workers.dev/mcp` です。Claude Desktop のコネクタ、または ChatGPT のカスタム MCP / プラグインから追加し、パスワードで許可します。
 
+## Google でログイン（任意）
+
+認可画面に「Google でログインして許可する」ボタンを出せます。パスワードでのログインもそのまま使えます。通すのは次のどちらかに当てはまる Google アカウントだけです。
+
+- `GOOGLE_ALLOWED_DOMAINS` に書いた Google Workspace 組織のアカウント（ID トークンの `hd` で判定。メールアドレスの末尾ではありません）
+- `GOOGLE_ALLOWED_EMAILS` に書いたメールアドレス（組織外の家族など。任意）
+
+どちらも空ならボタンは出ません。カンマ区切りで複数書けます。
+
+1. Google Cloud Console の「API とサービス → 認証情報」で OAuth クライアント ID（ウェブアプリケーション）を作る
+2. 承認済みのリダイレクト URI に `https://<your-worker>.workers.dev/callback/google` を入れる（ローカルなら `http://localhost:8787/callback/google`）
+3. 組織内だけで使うなら、OAuth 同意画面のユーザーの種類を「内部」にする
+4. 値を設定する
+
+```bash
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+```
+
+`GOOGLE_CLIENT_ID` / `GOOGLE_ALLOWED_DOMAINS` / `GOOGLE_ALLOWED_EMAILS` は秘密ではないので `wrangler.jsonc` の `vars` に書くか、GitHub Actions の variable に入れます。ローカルでは `.dev.vars` に書きます。
+
 ## GitHub Actions でのデプロイ
 
 `main` への push で type-check のあと、GitHub のリポジトリシークレットを Cloudflare Worker secrets に載せてデプロイします。再認証までの秒数 `AUTH_TTL_SECONDS` は秘密ではないので、`wrangler.jsonc` の `vars` にデフォルト（180日）を置き、GitHub の Actions variable で上書きできます。
@@ -84,6 +104,10 @@ npx wrangler deploy
 | `PIYOLOG_FEED_URL` | ぴよログ Data Feed の URL |
 | `CHILD_NAME` | ツール説明の呼び名 |
 | `AUTH_TTL_SECONDS` | 再認証までの秒（Actions **variable**。未設定なら 15552000 = 180日） |
+| `GOOGLE_CLIENT_SECRET` | Google ログイン用（任意） |
+| `GOOGLE_CLIENT_ID` | Google ログイン用（Actions **variable**。任意） |
+| `GOOGLE_ALLOWED_DOMAINS` | ログインを許す Workspace ドメイン（Actions **variable**。任意） |
+| `GOOGLE_ALLOWED_EMAILS` | ログインを許すメールアドレス（Actions **variable**。任意） |
 
 ```bash
 gh secret set CLOUDFLARE_API_TOKEN
@@ -94,6 +118,10 @@ gh secret set PIYOLOG_FEED_URL
 gh secret set CHILD_NAME
 # 任意。未設定なら wrangler.jsonc の 180日
 # gh variable set AUTH_TTL_SECONDS --body 15552000
+# Google ログインを使う場合
+# gh secret set GOOGLE_CLIENT_SECRET
+# gh variable set GOOGLE_CLIENT_ID --body xxx.apps.googleusercontent.com
+# gh variable set GOOGLE_ALLOWED_DOMAINS --body example.co.jp
 ```
 
 未設定のまま `main` に push すると、空の値で本番シークレットを上書きしないようデプロイ前に失敗します。ローカルの `wrangler dev` はこれまでどおり `.dev.vars` を読みます。

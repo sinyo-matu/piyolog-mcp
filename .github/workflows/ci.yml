@@ -61,11 +61,20 @@ jobs:
             COOKIE_ENCRYPTION_KEY
             PIYOLOG_FEED_URL
             CHILD_NAME
+            GOOGLE_CLIENT_SECRET
           vars: |
             AUTH_TTL_SECONDS
+            GOOGLE_CLIENT_ID
+            GOOGLE_ALLOWED_DOMAINS
+            GOOGLE_ALLOWED_EMAILS
         env:
           AUTH_PASSWORD: ${{ secrets.AUTH_PASSWORD }}
           COOKIE_ENCRYPTION_KEY: ${{ secrets.COOKIE_ENCRYPTION_KEY }}
           PIYOLOG_FEED_URL: ${{ secrets.PIYOLOG_FEED_URL }}
           CHILD_NAME: ${{ secrets.CHILD_NAME }}
           AUTH_TTL_SECONDS: ${{ vars.AUTH_TTL_SECONDS || '15552000' }}
+          # Google ログインは任意。未設定なら空のまま載り、ログインボタンは出ない。
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          GOOGLE_ALLOWED_DOMAINS: ${{ vars.GOOGLE_ALLOWED_DOMAINS }}
+          GOOGLE_ALLOWED_EMAILS: ${{ vars.GOOGLE_ALLOWED_EMAILS }}
