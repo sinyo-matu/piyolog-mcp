@@ -71,12 +71,7 @@ npx wrangler deploy
 
 ## Google でログイン（任意）
 
-認可画面に「Google でログインして許可する」ボタンを出せます。パスワードでのログインもそのまま使えます。通すのは次のどちらかに当てはまる Google アカウントだけです。
-
-- `GOOGLE_ALLOWED_DOMAINS` に書いた Google Workspace 組織のアカウント（ID トークンの `hd` で判定。メールアドレスの末尾ではありません）
-- `GOOGLE_ALLOWED_EMAILS` に書いたメールアドレス（組織外の家族など。任意）
-
-どちらも空ならボタンは出ません。カンマ区切りで複数書けます。
+認可画面に「Google でログインして許可する」ボタンを出せます。パスワードでのログインもそのまま使えます。通すのは `GOOGLE_ALLOWED_DOMAINS` に書いた Google Workspace 組織のアカウントだけです（ID トークンの `hd` で判定。メールアドレスの末尾ではありません）。カンマ区切りで複数書けます。空ならボタンは出ません。
 
 1. Google Cloud Console の「API とサービス → 認証情報」で OAuth クライアント ID（ウェブアプリケーション）を作る
 2. 承認済みのリダイレクト URI に `https://<your-worker>.workers.dev/callback/google` を入れる（ローカルなら `http://localhost:8787/callback/google`）
@@ -87,7 +82,7 @@ npx wrangler deploy
 npx wrangler secret put GOOGLE_CLIENT_SECRET
 ```
 
-`GOOGLE_CLIENT_ID` / `GOOGLE_ALLOWED_DOMAINS` / `GOOGLE_ALLOWED_EMAILS` は秘密ではないので `wrangler.jsonc` の `vars` に書くか、GitHub Actions の variable に入れます。ローカルでは `.dev.vars` に書きます。
+`GOOGLE_CLIENT_ID` / `GOOGLE_ALLOWED_DOMAINS` は秘密ではないので `wrangler.jsonc` の `vars` に書くか、GitHub Actions の variable に入れます。ローカルでは `.dev.vars` に書きます。
 
 ## GitHub Actions でのデプロイ
 
@@ -107,7 +102,6 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET
 | `GOOGLE_CLIENT_SECRET` | Google ログイン用（任意） |
 | `GOOGLE_CLIENT_ID` | Google ログイン用（Actions **variable**。任意） |
 | `GOOGLE_ALLOWED_DOMAINS` | ログインを許す Workspace ドメイン（Actions **variable**。任意） |
-| `GOOGLE_ALLOWED_EMAILS` | ログインを許すメールアドレス（Actions **variable**。任意） |
 
 ```bash
 gh secret set CLOUDFLARE_API_TOKEN

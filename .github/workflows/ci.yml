@@ -34,7 +34,6 @@ jobs:
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
       GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
       GOOGLE_ALLOWED_DOMAINS: ${{ vars.GOOGLE_ALLOWED_DOMAINS }}
-      GOOGLE_ALLOWED_EMAILS: ${{ vars.GOOGLE_ALLOWED_EMAILS }}
     steps:
       - uses: actions/checkout@v4
       - name: Check GitHub secrets
@@ -66,7 +65,7 @@ jobs:
         id: deploy-command
         run: |
           command="deploy --keep-vars"
-          for key in GOOGLE_CLIENT_ID GOOGLE_ALLOWED_DOMAINS GOOGLE_ALLOWED_EMAILS; do
+          for key in GOOGLE_CLIENT_ID GOOGLE_ALLOWED_DOMAINS; do
             eval "value=\${$key}"
             if [ -n "$value" ]; then
               command="$command --var $key:$value"

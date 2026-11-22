@@ -54,12 +54,6 @@ describe("verifyGoogleCode", () => {
     assert.equal(await verifyGoogleCode(testEnv(), request, "abc"), null);
   });
 
-  it("accepts an individually allowed email outside the organization", async () => {
-    mockTokenResponse({ ...validClaims, email: "papa@gmail.com", hd: undefined });
-    const env = testEnv({ GOOGLE_ALLOWED_EMAILS: "papa@gmail.com" });
-    assert.equal(await verifyGoogleCode(env, request, "abc"), "papa@gmail.com");
-  });
-
   it("rejects unverified email, wrong audience, wrong issuer and expired tokens", async () => {
     for (const claims of [
       { ...validClaims, email_verified: false },

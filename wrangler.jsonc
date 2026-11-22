@@ -26,10 +26,9 @@
     // Access / refresh / DCR lifetime in seconds. Default is 180 days.
     "AUTH_TTL_SECONDS": "15552000",
     // Google login (optional). Set the client id and at least one allowed
-    // Workspace domain or email; GOOGLE_CLIENT_SECRET goes in secrets.
+    // Workspace domain; GOOGLE_CLIENT_SECRET goes in secrets.
     "GOOGLE_CLIENT_ID": "",
     "GOOGLE_ALLOWED_DOMAINS": "",
-    "GOOGLE_ALLOWED_EMAILS": "",
   },
   "secrets": {
     "required": [
