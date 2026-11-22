@@ -28,6 +28,12 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: read
+    env:
+      # Google ログインは任意。未設定の値は Worker に渡さない
+      # (wrangler-action は vars / secrets に空の値があると失敗するため)。
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+      GOOGLE_ALLOWED_DOMAINS: ${{ vars.GOOGLE_ALLOWED_DOMAINS }}
     steps:
       - uses: actions/checkout@v4
       - name: Check GitHub secrets
@@ -49,32 +55,40 @@ jobs:
             echo "gh secret set <NAME> で入れてから workflow を再実行してください。"
             exit 1
           fi
+      - name: Upload Google client secret
+        if: env.GOOGLE_CLIENT_SECRET != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: printf '%s' "$GOOGLE_CLIENT_SECRET" | npx --yes wrangler@4 secret put GOOGLE_CLIENT_SECRET
+      - name: Build deploy command
+        id: deploy-command
+        run: |
+          command="deploy --keep-vars"
+          for key in GOOGLE_CLIENT_ID GOOGLE_ALLOWED_DOMAINS; do
+            eval "value=\${$key}"
+            if [ -n "$value" ]; then
+              command="$command --var $key:$value"
+            fi
+          done
+          echo "command=$command" >> "$GITHUB_OUTPUT"
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           packageManager: npm
-          command: deploy --keep-vars
+          command: ${{ steps.deploy-command.outputs.command }}
           secrets: |
             AUTH_PASSWORD
             COOKIE_ENCRYPTION_KEY
             PIYOLOG_FEED_URL
             CHILD_NAME
-            GOOGLE_CLIENT_SECRET
           vars: |
             AUTH_TTL_SECONDS
-            GOOGLE_CLIENT_ID
-            GOOGLE_ALLOWED_DOMAINS
-            GOOGLE_ALLOWED_EMAILS
         env:
           AUTH_PASSWORD: ${{ secrets.AUTH_PASSWORD }}
           COOKIE_ENCRYPTION_KEY: ${{ secrets.COOKIE_ENCRYPTION_KEY }}
           PIYOLOG_FEED_URL: ${{ secrets.PIYOLOG_FEED_URL }}
           CHILD_NAME: ${{ secrets.CHILD_NAME }}
           AUTH_TTL_SECONDS: ${{ vars.AUTH_TTL_SECONDS || '15552000' }}
-          # Google ログインは任意。未設定なら空のまま載り、ログインボタンは出ない。
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-          GOOGLE_ALLOWED_DOMAINS: ${{ vars.GOOGLE_ALLOWED_DOMAINS }}
-          GOOGLE_ALLOWED_EMAILS: ${{ vars.GOOGLE_ALLOWED_EMAILS }}

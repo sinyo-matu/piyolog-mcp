@@ -3,10 +3,9 @@ COOKIE_ENCRYPTION_KEY=replace-with-openssl-rand-hex-32
 PIYOLOG_FEED_URL=https://feed.piyolog.com/v1/feed/28d/FEED_ID/SECRET
 CHILD_NAME=Baby
 # AUTH_TTL_SECONDS=15552000
-# Google ログイン (任意)。CLIENT_ID・SECRET と、許可ドメインか許可メールのどちらかを
-# 設定すると認可画面に「Google でログイン」が出る。
+# Google ログイン (任意)。CLIENT_ID・SECRET・許可ドメインを設定すると
+# 認可画面に「Google でログイン」が出る。
 # GOOGLE_ALLOWED_DOMAINS は Google Workspace の組織ドメイン (例: example.co.jp)。
 # GOOGLE_CLIENT_ID=
 # GOOGLE_CLIENT_SECRET=
 # GOOGLE_ALLOWED_DOMAINS=example.co.jp
-# GOOGLE_ALLOWED_EMAILS=

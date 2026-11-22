@@ -1,5 +1,5 @@
 // Google の OpenID Connect で本人確認する。GOOGLE_ALLOWED_DOMAINS の Google Workspace 組織の
-// アカウント、または GOOGLE_ALLOWED_EMAILS にあるメールアドレスだけを通す。
+// アカウントだけを通す。
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -8,33 +8,21 @@ const GOOGLE_ISSUERS = new Set(["https://accounts.google.com", "accounts.google.
 export const GOOGLE_CALLBACK_PATH = "/callback/google";
 
 /**
- * GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET があり、許可ドメインか許可メールが 1 件以上あるときだけ有効。
+ * GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET があり、許可ドメインが 1 件以上あるときだけ有効。
  * 許可先が空のまま有効にすると、どの Google アカウントでも通ってしまうため。
  */
 export function googleLoginEnabled(env: Env): boolean {
-  return Boolean(
-    env.GOOGLE_CLIENT_ID &&
-      env.GOOGLE_CLIENT_SECRET &&
-      (allowedDomains(env).size > 0 || allowedEmails(env).size > 0),
-  );
+  return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && allowedDomains(env).size > 0);
 }
 
 // カンマ・空白区切り。大文字小文字は区別しない。
-function listSetting(value: string | undefined): Set<string> {
+function allowedDomains(env: Env): Set<string> {
   return new Set(
-    (value ?? "")
+    (env.GOOGLE_ALLOWED_DOMAINS ?? "")
       .split(/[\s,]+/)
       .map((item) => item.trim().toLowerCase())
       .filter(Boolean),
   );
-}
-
-function allowedDomains(env: Env): Set<string> {
-  return listSetting(env.GOOGLE_ALLOWED_DOMAINS);
-}
-
-function allowedEmails(env: Env): Set<string> {
-  return listSetting(env.GOOGLE_ALLOWED_EMAILS);
 }
 
 export function googleRedirectUri(request: Request): string {
@@ -82,7 +70,7 @@ function decodeJwtPayload(jwt: string): GoogleIdClaims | null {
 }
 
 /**
- * 認可コードをトークンに交換し、許可された確認済みメールアドレスを返す。
+ * 認可コードをトークンに交換し、許可された組織の確認済みメールアドレスを返す。
  * 組織の判定は hd クレーム (Workspace アカウントにだけ付く) で行う。メールアドレスのドメインは
  * 組織外の Google アカウントでも名乗れるので使わない。
  * ID トークンはトークンエンドポイントから TLS で直接受け取るので署名検証は省略できる
@@ -129,8 +117,5 @@ export async function verifyGoogleCode(env: Env, request: Request, code: string)
   }
   const email = claims.email.toLowerCase();
   const domain = typeof claims.hd === "string" ? claims.hd.toLowerCase() : "";
-  if ((domain && allowedDomains(env).has(domain)) || allowedEmails(env).has(email)) {
-    return email;
-  }
-  return null;
+  return domain && allowedDomains(env).has(domain) ? email : null;
 }

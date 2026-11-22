@@ -11,7 +11,6 @@ interface __BaseEnv_Env {
 	GOOGLE_CLIENT_ID?: string;
 	GOOGLE_CLIENT_SECRET?: string;
 	GOOGLE_ALLOWED_DOMAINS?: string;
-	GOOGLE_ALLOWED_EMAILS?: string;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
