@@ -84,6 +84,12 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET
 
 `GOOGLE_CLIENT_ID` / `GOOGLE_ALLOWED_DOMAINS` は秘密ではないので `wrangler.jsonc` の `vars` に書くか、GitHub Actions の variable に入れます。ローカルでは `.dev.vars` に書きます。
 
+`GOOGLE_CLIENT_SECRET` は任意なので `wrangler.jsonc` の `secrets.required` に入れていません（入れると、使わない人のデプロイが失敗します）。そのためローカルでは `.dev.vars` に書いても読み込まれません。ローカルで Google ログインを試すときは起動時に渡します。
+
+```bash
+npx wrangler dev --var GOOGLE_CLIENT_SECRET:xxxx
+```
+
 ## GitHub Actions でのデプロイ
 
 `main` への push で type-check のあと、GitHub のリポジトリシークレットを Cloudflare Worker secrets に載せてデプロイします。再認証までの秒数 `AUTH_TTL_SECONDS` は秘密ではないので、`wrangler.jsonc` の `vars` にデフォルト（180日）を置き、GitHub の Actions variable で上書きできます。
