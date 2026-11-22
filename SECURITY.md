@@ -5,6 +5,7 @@ piyo-mcp は乳児の健康記録を扱うセルフホスト MCP です。公開
 ## 想定する脅威モデル
 
 - パスワードを知っている人は、OAuth 連携後に保存済みの全記録を読めます。ユーザーごとのアカウントはありません。
+- Google ログインを有効にすると、`GOOGLE_ALLOWED_DOMAINS` の Workspace 組織の全員と `GOOGLE_ALLOWED_EMAILS` の人が同じ権限で読めます。組織判定は ID トークンの `hd` クレームで行い、メールアドレスのドメインは信用しません。
 - 28日を過ぎた記録は `OAUTH_KV` に残ります。フィード URL を失効しても、こちらに保存済みの記録は消えません。
 - Data Feed URL が漏れると、この Worker を経由しなくても記録を取得できることがあります。URL は secret として扱ってください。
 - Dynamic Client Registration は公開エンドポイントです。OAuth クライアントの無制限登録やトークンエンドポイントへの総当たりは、Cloudflare 側のレート制限に依存します。

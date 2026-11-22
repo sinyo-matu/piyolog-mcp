@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { verifyAuthPassword } from "./auth";
 import { childName } from "./config";
 import { cookieFlags, cookieName, readCookie, signaturesEqual, signValue } from "./crypto";
+import { GOOGLE_CALLBACK_PATH, googleAuthUrl, googleLoginEnabled, verifyGoogleCode } from "./google";
 import { authorizePage, authorizeRedirectPage, homePage } from "./html";
 
 type AppEnv = Env & { OAUTH_PROVIDER: OAuthHelpers };
@@ -12,6 +13,9 @@ type AppEnv = Env & { OAUTH_PROVIDER: OAuthHelpers };
 const OAUTH_STATE_COOKIE = "OAUTH_REQ";
 // 認可画面を開いてからパスワードを送るまでの猶予 (10 分)。
 const OAUTH_REQ_TTL_SECONDS = 600;
+
+// Google ログインの state。リダイレクト前に Cookie に置き、コールバックで照合する。
+const GOOGLE_STATE_COOKIE = "GOOGLE_STATE";
 
 // iat は発行時刻 (UNIX 秒)。期限切れの判定に使う。
 type StoredOAuthRequest = { iat: number; request: AuthRequest };
@@ -87,6 +91,49 @@ function clearOAuthCookie(request: Request): string {
   return `${cookieName(request, OAUTH_STATE_COOKIE)}=; ${cookieFlags(request)}; Max-Age=0`;
 }
 
+function googleStateCookie(request: Request, state: string): string {
+  return `${cookieName(request, GOOGLE_STATE_COOKIE)}=${state}; ${cookieFlags(request)}; Max-Age=${OAUTH_REQ_TTL_SECONDS}`;
+}
+
+function clearGoogleStateCookie(request: Request): string {
+  return `${cookieName(request, GOOGLE_STATE_COOKIE)}=; ${cookieFlags(request)}; Max-Age=0`;
+}
+
+function randomState(): string {
+  return [...crypto.getRandomValues(new Uint8Array(32))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * 認可コードを発行して、クライアントへ戻すページを返す。失敗時は null。
+ * 利用者は家族ひとまとめの単一ユーザー扱い。props は MCP ハンドラー側に渡る。
+ */
+async function completeFamilyAuthorization(
+  env: AppEnv,
+  request: Request,
+  oauthRequest: AuthRequest,
+  label: string,
+): Promise<Response | null> {
+  // スコープ指定がなければ読み取り専用の mcp:read を付与する。
+  const scope = oauthRequest.scope.length > 0 ? oauthRequest.scope : ["mcp:read"];
+  let redirectTo: string;
+  try {
+    ({ redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
+      request: oauthRequest,
+      userId: "family",
+      metadata: { label },
+      scope,
+      props: { family: true },
+    }));
+  } catch {
+    return null;
+  }
+  // 認可が済んだら一時 Cookie は消して、同じリクエストを再利用できないようにする。
+  const response = authorizeRedirectPage(redirectTo);
+  response.headers.append("Set-Cookie", clearOAuthCookie(request));
+  response.headers.append("Set-Cookie", clearGoogleStateCookie(request));
+  return response;
+}
+
 // 認可画面に表示するクライアント名。登録名がなければ client_id を出す。
 function clientName(client: { clientName?: string } | null | undefined, clientId: string): string {
   return client?.clientName?.trim() || clientId;
@@ -118,6 +165,7 @@ app.get("/authorize", async (c) => {
     oauthReq,
     clientName: clientName(client, oauthRequest.clientId),
     redirectUri: oauthRequest.redirectUri,
+    google: googleLoginEnabled(c.env),
   });
   response.headers.append("Set-Cookie", await signedOAuthCookie(c.req.raw, c.env, oauthReq));
   return response;
@@ -141,6 +189,7 @@ app.post("/authorize", async (c) => {
       oauthReq: oauthReqValue,
       clientName: "Claude",
       redirectUri: oauthRequest?.redirectUri,
+      google: googleLoginEnabled(c.env),
       error: message,
     });
     if (oauthReqValue) {
@@ -157,24 +206,64 @@ app.post("/authorize", async (c) => {
     return fail("パスワードが違います。");
   }
 
-  // スコープ指定がなければ読み取り専用の mcp:read を付与する。
-  const scope = oauthRequest.scope.length > 0 ? oauthRequest.scope : ["mcp:read"];
-  let redirectTo: string;
-  try {
-    // 利用者は家族ひとまとめの単一ユーザー扱い。props は MCP ハンドラー側に渡る。
-    ({ redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
-      request: oauthRequest,
-      userId: "family",
-      metadata: { label: "family" },
-      scope,
-      props: { family: true },
-    }));
-  } catch {
-    return fail("認可に失敗しました。Claude Desktop からやり直してください。");
+  const response = await completeFamilyAuthorization(c.env, c.req.raw, oauthRequest, "family");
+  return response ?? fail("認可に失敗しました。Claude Desktop からやり直してください。");
+});
+
+// 認可画面の「Google でログイン」(POST): Google の認可画面へ送る。
+app.post("/authorize/google", async (c) => {
+  const form = await c.req.formData();
+  const formOAuthReq = form.get("oauth_req");
+  const oauthReqValue = typeof formOAuthReq === "string" ? formOAuthReq : "";
+  // SameSite=Lax の Cookie はクロスサイトの POST に付かない。フォームと Cookie の一致を求めて、
+  // 他サイトから直接この URL を叩かせる (Google の自動ログインで画面を経ずに許可される) のを防ぐ。
+  const cookieOAuthReq = readCookie(c.req.raw, cookieName(c.req.raw, OAUTH_STATE_COOKIE)) ?? "";
+  const oauthRequest =
+    oauthReqValue && oauthReqValue === cookieOAuthReq ? await readSignedOAuthRequest(c.env, oauthReqValue) : null;
+  if (!googleLoginEnabled(c.env) || !oauthRequest) {
+    return c.text("認可セッションが切れました。Claude Desktop の連携ボタンからやり直してください。", 400);
+  }
+  const state = randomState();
+  const response = c.redirect(googleAuthUrl(c.env, c.req.raw, state), 303);
+  response.headers.append("Set-Cookie", googleStateCookie(c.req.raw, state));
+  return response;
+});
+
+// Google からの戻り先: state を照合し、許可リストのアカウントなら認可コード付きでクライアントへ戻す。
+app.get(GOOGLE_CALLBACK_PATH, async (c) => {
+  const url = new URL(c.req.url);
+  const oauthReqValue = readCookie(c.req.raw, cookieName(c.req.raw, OAUTH_STATE_COOKIE)) ?? "";
+  const oauthRequest = await readSignedOAuthRequest(c.env, oauthReqValue);
+
+  const fail = async (message: string) => {
+    const response = authorizePage({
+      oauthReq: oauthReqValue,
+      clientName: "Claude",
+      redirectUri: oauthRequest?.redirectUri,
+      google: googleLoginEnabled(c.env),
+      error: message,
+    });
+    response.headers.append("Set-Cookie", clearGoogleStateCookie(c.req.raw));
+    return response;
+  };
+
+  if (!oauthRequest) {
+    return fail("認可セッションが切れました。Claude Desktop の連携ボタンからやり直してください。");
+  }
+  const state = url.searchParams.get("state") ?? "";
+  const expectedState = readCookie(c.req.raw, cookieName(c.req.raw, GOOGLE_STATE_COOKIE)) ?? "";
+  if (!state || !expectedState || !(await signaturesEqual(state, expectedState))) {
+    return fail("Google ログインの確認に失敗しました。もう一度お試しください。");
+  }
+  const code = url.searchParams.get("code");
+  if (!code) {
+    return fail("Google ログインがキャンセルされました。");
+  }
+  const email = await verifyGoogleCode(c.env, c.req.raw, code).catch(() => null);
+  if (!email) {
+    return fail("この Google アカウントでは許可できません。");
   }
 
-  // 認可が済んだら一時 Cookie は消して、同じリクエストを再利用できないようにする。
-  const response = authorizeRedirectPage(redirectTo);
-  response.headers.append("Set-Cookie", clearOAuthCookie(c.req.raw));
-  return response;
+  const response = await completeFamilyAuthorization(c.env, c.req.raw, oauthRequest, `google:${email}`);
+  return response ?? fail("認可に失敗しました。Claude Desktop からやり直してください。");
 });
