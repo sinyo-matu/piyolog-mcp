@@ -26,7 +26,7 @@
     // Access / refresh / DCR lifetime in seconds. Default is 180 days.
     "AUTH_TTL_SECONDS": "15552000",
     // Google login (optional). Set the client id and at least one allowed
-    // Workspace domain; GOOGLE_CLIENT_SECRET goes in secrets.
+    // Workspace domain; GOOGLE_CLIENT_SECRET goes in Worker secrets.
     "GOOGLE_CLIENT_ID": "",
     "GOOGLE_ALLOWED_DOMAINS": "",
   },
@@ -36,8 +36,8 @@
       "COOKIE_ENCRYPTION_KEY",
       "PIYOLOG_FEED_URL",
       "CHILD_NAME",
-      // Optional: leave empty to disable Google login.
-      "GOOGLE_CLIENT_SECRET",
+      // GOOGLE_CLIENT_SECRET is optional, so it is not listed here: a required
+      // secret that is not set makes `wrangler deploy` fail.
     ],
   },
 }
