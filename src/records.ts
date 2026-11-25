@@ -1,5 +1,5 @@
 import { TIMEZONE, zonedParts } from "./time.ts";
-import { FEEDING_TYPES, TYPE_LABELS, type PiyoRecord } from "./types.ts";
+import type { PiyoRecord } from "./types.ts";
 
 type Amount = NonNullable<PiyoRecord["value"]>;
 
@@ -21,27 +21,50 @@ export type NormalizedRecord =
   | (RecordBase & { kind: "milk" | "pumping" | "food" | "sleep" | "wake" | "diaper" | "measurement" | "event" })
   | (RecordBase & { kind: "unknown"; raw: PiyoRecord });
 
-type PlainKind = Exclude<NormalizedRecord["kind"], "breast" | "unknown">;
+type KnownKind = Exclude<NormalizedRecord["kind"], "unknown">;
 
-const KINDS: Record<string, PlainKind> = {
-  Formula: "milk",
-  ExpressedBreastMilk: "milk",
-  Pumping: "pumping",
-  Solid: "food",
-  Snack: "food",
-  Meal: "food",
-  Drink: "food",
-  Sleep: "sleep",
-  WakeUp: "wake",
-  Pee: "diaper",
-  Poop: "diaper",
-  Temperature: "measurement",
-  Height: "measurement",
-  Weight: "measurement",
-  Head: "measurement",
-  Chest: "measurement",
-  Foot: "measurement",
-};
+/** Every known PiyoLog type. Labels, kinds and categories all come from here. */
+const RECORD_TYPES = new Map<string, { label: string; kind: KnownKind }>([
+  ["BreastFeeding", { label: "母乳", kind: "breast" }],
+  ["Formula", { label: "ミルク", kind: "milk" }],
+  ["ExpressedBreastMilk", { label: "搾母乳", kind: "milk" }],
+  ["Pumping", { label: "搾乳", kind: "pumping" }],
+  ["Solid", { label: "離乳食", kind: "food" }],
+  ["Snack", { label: "おやつ", kind: "food" }],
+  ["Meal", { label: "ごはん", kind: "food" }],
+  ["Drink", { label: "のみもの", kind: "food" }],
+  ["Sleep", { label: "寝る", kind: "sleep" }],
+  ["WakeUp", { label: "起きる", kind: "wake" }],
+  ["Pee", { label: "おしっこ", kind: "diaper" }],
+  ["Poop", { label: "うんち", kind: "diaper" }],
+  ["Temperature", { label: "体温", kind: "measurement" }],
+  ["Height", { label: "身長", kind: "measurement" }],
+  ["Weight", { label: "体重", kind: "measurement" }],
+  ["Head", { label: "頭囲", kind: "measurement" }],
+  ["Chest", { label: "胸囲", kind: "measurement" }],
+  ["Foot", { label: "足サイズ", kind: "measurement" }],
+  ["Bath", { label: "お風呂", kind: "event" }],
+  ["Medicine", { label: "くすり", kind: "event" }],
+  ["Hospital", { label: "病院", kind: "event" }],
+  ["Walking", { label: "さんぽ", kind: "event" }],
+  ["Vaccine", { label: "予防接種", kind: "event" }],
+  ["Milestone", { label: "できた", kind: "event" }],
+  ["Other", { label: "その他", kind: "event" }],
+  ["Memo", { label: "メモ", kind: "event" }],
+]);
+
+/** Categories that a caller can ask for, by kind. */
+const CATEGORIES = new Map<string, readonly KnownKind[]>([
+  ["feeding", ["breast", "milk", "pumping", "food"]],
+  ["sleep", ["sleep", "wake"]],
+  ["diaper", ["diaper"]],
+  ["measurement", ["measurement"]],
+]);
+
+/** A feed the baby drank: breast, formula or expressed milk. */
+export function isMilkFeed(record: NormalizedRecord): boolean {
+  return record.kind === "breast" || record.kind === "milk";
+}
 
 /** Null when the record has no usable id, type or datetime. */
 export function normalizeRecord(record: PiyoRecord, timeZone = TIMEZONE): NormalizedRecord | null {
@@ -55,33 +78,30 @@ export function normalizeRecord(record: PiyoRecord, timeZone = TIMEZONE): Normal
   ) {
     return null;
   }
+  const known = RECORD_TYPES.get(record.type);
   const base: RecordBase = {
     eventId: record.event_id,
     datetime: record.datetime,
     ...zonedParts(record.datetime, timeZone),
     type: record.type,
-    label: TYPE_LABELS[record.type] ?? record.type,
+    label: known?.label ?? record.type,
     memo: record.memo,
     amount: record.value,
     details: record.details,
   };
-  if (record.type === "BreastFeeding") {
+  if (!known) {
+    return { ...base, kind: "unknown", raw: record };
+  }
+  if (known.kind === "breast") {
     return {
       ...base,
-      kind: "breast",
+      kind: known.kind,
       leftSeconds: record.leftTime,
       rightSeconds: record.rightTime,
       lastSide: record.last,
     };
   }
-  const kind = KINDS[record.type];
-  if (kind) {
-    return { ...base, kind };
-  }
-  if (TYPE_LABELS[record.type]) {
-    return { ...base, kind: "event" };
-  }
-  return { ...base, kind: "unknown", raw: record };
+  return { ...base, kind: known.kind };
 }
 
 export function normalizeAll(records: PiyoRecord[]): NormalizedRecord[] {
@@ -91,28 +111,24 @@ export function normalizeAll(records: PiyoRecord[]): NormalizedRecord[] {
     .sort((left, right) => Date.parse(left.datetime) - Date.parse(right.datetime));
 }
 
-export const CATEGORIES: Record<string, readonly string[]> = {
-  feeding: FEEDING_TYPES,
-  sleep: ["Sleep", "WakeUp"],
-  diaper: ["Pee", "Poop"],
-  measurement: ["Temperature", "Height", "Weight", "Head", "Chest", "Foot"],
-};
-
 /** Expand categories. A name must be a known type, or a new one that the data actually has. */
 export function resolveTypes(types: string[], present: Record<string, number>): Set<string> {
   const resolved = new Set<string>();
   const unknown: string[] = [];
   for (const type of types) {
-    if (Object.hasOwn(CATEGORIES, type)) {
-      for (const item of CATEGORIES[type] ?? []) resolved.add(item);
-    } else if (Object.hasOwn(TYPE_LABELS, type) || Object.hasOwn(present, type)) {
+    const kinds = CATEGORIES.get(type);
+    if (kinds) {
+      for (const [name, { kind }] of RECORD_TYPES) {
+        if (kinds.includes(kind)) resolved.add(name);
+      }
+    } else if (RECORD_TYPES.has(type) || Object.hasOwn(present, type)) {
       resolved.add(type);
     } else {
       unknown.push(type);
     }
   }
   if (unknown.length > 0) {
-    const names = [...Object.keys(CATEGORIES), ...Object.keys(TYPE_LABELS)].join(", ");
+    const names = [...CATEGORIES.keys(), ...RECORD_TYPES.keys()].join(", ");
     throw new Error(`types に知らない値があります: ${unknown.join(", ")}。使える値: ${names}`);
   }
   return resolved;
