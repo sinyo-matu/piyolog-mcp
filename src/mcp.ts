@@ -4,7 +4,9 @@ import { z } from "zod";
 import { childName } from "./config";
 import { fetchDocument, searchDocuments } from "./docs";
 import { analysisBundle, buildDashboard, formatLatestText, getDay } from "./feeding";
+import { resolveDate } from "./date";
 import { FeedError, loadFeed } from "./piyolog";
+import type { FeedSnapshot } from "./types";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
 const oauthSchemes = [{ type: "oauth2" as const, scopes: ["mcp:read"] }];
@@ -37,6 +39,11 @@ const fetchOutput = z.object({
   metadata: z.record(z.string(), z.string()).optional(),
 });
 const recordsOutput = z.object({
+  feed: z.object({
+    stale: z.boolean(),
+    generatedAt: z.string(),
+    reason: z.enum(["request_failed", "empty_feed"]).optional(),
+  }),
   data: z.unknown(),
 });
 
@@ -55,6 +62,32 @@ function jsonResult<T>(data: T): {
   return {
     structuredContent: data,
     content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+  };
+}
+
+function staleNotice(snapshot: FeedSnapshot): string | null {
+  if (!snapshot.staleReason) {
+    return null;
+  }
+  const cause = snapshot.staleReason === "empty_feed" ? "ぴよログのフィードが空だった" : "ぴよログの取得に失敗した";
+  return `注意: ${cause}ため、${snapshot.generated_at} 時点の保存済み記録です。最新ではない可能性があります。`;
+}
+
+function recordsResult(snapshot: FeedSnapshot, data: unknown, text?: string) {
+  const notice = staleNotice(snapshot);
+  const result = {
+    feed: {
+      stale: snapshot.staleReason !== undefined,
+      generatedAt: snapshot.generated_at,
+      ...(snapshot.staleReason ? { reason: snapshot.staleReason } : {}),
+    },
+    data,
+  };
+  return {
+    structuredContent: result,
+    content: [notice, text, JSON.stringify(result, null, 2)]
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => ({ type: "text" as const, text: item })),
   };
 }
 
@@ -92,7 +125,7 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
       },
       {
         instructions:
-          `${child}のぴよログ読み取り専用。フィードは直近28日だが、それより前の記録はこちらに残してある。分析は get_all_records。今日は get_today_records。最新は get_latest_status。日付指定の食事は get_feeding_records。search/fetch は記録の検索用。母乳mlは記録があるときだけ使い、授乳時間から推定しない。呼び出し前にOAuthが必要。`,
+          `${child}のぴよログ読み取り専用。フィードは直近28日だが、それより前の記録はこちらに残してある。分析は get_all_records。今日は get_today_records。最新は get_latest_status。日付指定の食事は get_feeding_records。search/fetch は記録の検索用。feed.stale が true なら最新ではない可能性を伝える。母乳mlは記録があるときだけ使い、授乳時間から推定しない。呼び出し前にOAuthが必要。`,
       },
     );
 
@@ -114,7 +147,7 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
         try {
           const snapshot = await loadFeed(env);
           const dashboard = buildDashboard(snapshot);
-          return jsonResult({ data: analysisBundle(snapshot, { date: dashboard.today }) });
+          return recordsResult(snapshot, analysisBundle(snapshot, { date: dashboard.today }));
         } catch (error) {
           return errorResult(error);
         }
@@ -139,13 +172,11 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
         try {
           const snapshot = await loadFeed(env);
           const dashboard = buildDashboard(snapshot);
-          return {
-            structuredContent: { data: analysisBundle(snapshot, { date: dashboard.today }) },
-            content: [
-              { type: "text" as const, text: formatLatestText(snapshot, dashboard, child) },
-              { type: "text" as const, text: JSON.stringify(analysisBundle(snapshot, { date: dashboard.today })) },
-            ],
-          };
+          return recordsResult(
+            snapshot,
+            analysisBundle(snapshot, { date: dashboard.today }),
+            formatLatestText(snapshot, dashboard, child),
+          );
         } catch (error) {
           return errorResult(error);
         }
@@ -170,8 +201,8 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
         try {
           const snapshot = await loadFeed(env);
           const dashboard = buildDashboard(snapshot);
-          const target = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : dashboard.today;
-          return jsonResult({ data: getDay(dashboard, target) });
+          const target = resolveDate(date, dashboard.today);
+          return recordsResult(snapshot, getDay(dashboard, target));
         } catch (error) {
           return errorResult(error);
         }
@@ -195,7 +226,7 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
         }
         try {
           const snapshot = await loadFeed(env);
-          return jsonResult({ data: analysisBundle(snapshot) });
+          return recordsResult(snapshot, analysisBundle(snapshot));
         } catch (error) {
           return errorResult(error);
         }
@@ -244,6 +275,14 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
           const document = fetchDocument(snapshot, origin, id, child);
           if (!document) {
             return { content: [{ type: "text", text: `id ${id} は見つかりませんでした` }], isError: true };
+          }
+          const notice = staleNotice(snapshot);
+          if (notice) {
+            return jsonResult({
+              ...document,
+              text: `${notice}\n\n${document.text}`,
+              metadata: { ...document.metadata, stale: "true" },
+            });
           }
           return jsonResult(document);
         } catch (error) {
