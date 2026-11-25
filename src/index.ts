@@ -20,12 +20,9 @@ const DISCOVERY_METHODS = new Set([
 
 const OAUTH_SCHEMES = [{ type: "oauth2", scopes: ["mcp:read"] }];
 const EXPECTED_TOOLS = [
-  "get_today_records",
   "get_latest_status",
-  "get_feeding_records",
   "get_records",
   "get_summary",
-  "get_all_records",
   "search",
   "fetch",
 ];
@@ -294,7 +291,7 @@ async function scanAsChatgpt(request: Request, env: Env, ctx: ExecutionContext):
     jsonrpc: "2.0",
     id: 3,
     method: "tools/call",
-    params: { name: "get_today_records", arguments: {} },
+    params: { name: "get_records", arguments: {} },
   });
   const callResult = rpcResult(call.body);
   const callText = JSON.stringify(call.body);

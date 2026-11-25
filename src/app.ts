@@ -143,7 +143,6 @@ export const app = new Hono<{ Bindings: AppEnv }>();
 
 app.get("/", (c) => homePage(new URL(c.req.url).origin, childName(c.env)));
 app.get("/login", (c) => c.redirect("/", 302));
-app.get("/api/dashboard", (c) => c.body(null, 410));
 
 // 認可エンドポイント (GET): リクエストを検証し、パスワード入力画面を返す。
 app.get("/authorize", async (c) => {

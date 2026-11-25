@@ -1,4 +1,4 @@
-import { TIMEZONE, todayInZone } from "./feeding.ts";
+import { TIMEZONE, todayInZone } from "./time.ts";
 import { normalizeRecord, type NormalizedRecord } from "./records.ts";
 import type { PiyoRecord } from "./types.ts";
 

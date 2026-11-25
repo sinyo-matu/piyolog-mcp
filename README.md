@@ -17,13 +17,10 @@ MCP エンドポイント: `https://<your-worker>.workers.dev/mcp`
 
 | ツール | 内容 |
 | --- | --- |
-| `get_today_records` | 今日（JST）の全記録 JSON |
 | `get_latest_status` | 種別ごとの最新記録と経過時間、今日の合計 |
-| `get_feeding_records` | 指定日の食事・授乳 |
 | `get_records` | 期間(JST)と種別を指定した記録。ページ分割あり |
 | `get_summary` | 授乳・睡眠・おむつの日別／週別集計、前の期間との比較 |
-| `get_all_records` | 保存済みの全件（分析用。28日を過ぎた記録も含む） |
-| `search` / `fetch` | 記録の検索と取得 |
+| `search` / `fetch` | メモ・種別・日付での検索と取得 |
 
 母乳の ml は記録があるときだけ使い、授乳時間から推定しません。
 
