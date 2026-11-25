@@ -49,6 +49,17 @@ describe("queryRecords", () => {
     assert.deepEqual(result.typeCounts, { Formula: 2, Sleep: 1 });
   });
 
+  it("expands a category and rejects an unknown type", () => {
+    const result = queryRecords(records, { ...day, types: ["sleep"] });
+    assert.deepEqual(result.records.map((item) => item.eventId), ["sleep"]);
+    assert.throws(() => queryRecords(records, { ...day, types: ["Milk"] }), /Milk/);
+  });
+
+  it("accepts a new type that the data has", () => {
+    const result = queryRecords([record("new", "2026-09-01T00:00:00.000Z", "NewType")], { ...day, types: ["NewType"] });
+    assert.equal(result.total, 1);
+  });
+
   it("pages through every record once", () => {
     const first = queryRecords(records, { ...day, limit: 2 });
     const second = queryRecords(records, { ...day, limit: 2, offset: first.nextOffset ?? 0 });

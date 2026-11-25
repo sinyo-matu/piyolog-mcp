@@ -1,5 +1,5 @@
 import { TIMEZONE, zonedParts } from "./feeding.ts";
-import { TYPE_LABELS, type PiyoRecord } from "./types.ts";
+import { FEEDING_TYPES, TYPE_LABELS, type PiyoRecord } from "./types.ts";
 
 type Amount = NonNullable<PiyoRecord["value"]>;
 
@@ -84,6 +84,33 @@ export function normalizeRecord(record: PiyoRecord, timeZone = TIMEZONE): Normal
   return { ...base, kind: "unknown", raw: record };
 }
 
+export const CATEGORIES: Record<string, readonly string[]> = {
+  feeding: FEEDING_TYPES,
+  sleep: ["Sleep", "WakeUp"],
+  diaper: ["Pee", "Poop"],
+  measurement: ["Temperature", "Height", "Weight", "Head", "Chest", "Foot"],
+};
+
+/** Expand categories. A name must be a known type, or a new one that the data actually has. */
+export function resolveTypes(types: string[], present: Record<string, number>): Set<string> {
+  const resolved = new Set<string>();
+  const unknown: string[] = [];
+  for (const type of types) {
+    if (Object.hasOwn(CATEGORIES, type)) {
+      for (const item of CATEGORIES[type] ?? []) resolved.add(item);
+    } else if (Object.hasOwn(TYPE_LABELS, type) || Object.hasOwn(present, type)) {
+      resolved.add(type);
+    } else {
+      unknown.push(type);
+    }
+  }
+  if (unknown.length > 0) {
+    const names = [...Object.keys(CATEGORIES), ...Object.keys(TYPE_LABELS)].join(", ");
+    throw new Error(`types に知らない値があります: ${unknown.join(", ")}。使える値: ${names}`);
+  }
+  return resolved;
+}
+
 export type RecordQuery = {
   from: string;
   to: string;
@@ -111,7 +138,7 @@ export function queryRecords(records: PiyoRecord[], query: RecordQuery) {
   for (const record of inRange) {
     typeCounts[record.type] = (typeCounts[record.type] ?? 0) + 1;
   }
-  const allowed = query.types && query.types.length > 0 ? new Set(query.types) : null;
+  const allowed = query.types && query.types.length > 0 ? resolveTypes(query.types, typeCounts) : null;
   const matched = allowed ? inRange.filter((record) => allowed.has(record.type)) : inRange;
   const offset = query.offset ?? 0;
   const page = matched.slice(offset, offset + (query.limit ?? 500));
