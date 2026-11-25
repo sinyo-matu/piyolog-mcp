@@ -1,6 +1,8 @@
 // Google の OpenID Connect で本人確認する。GOOGLE_ALLOWED_DOMAINS の Google Workspace 組織の
 // アカウントだけを通す。
 
+import { decodeBase64Url } from "./crypto.ts";
+
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_ISSUERS = new Set(["https://accounts.google.com", "accounts.google.com"]);
@@ -61,9 +63,7 @@ function decodeJwtPayload(jwt: string): GoogleIdClaims | null {
     return null;
   }
   try {
-    const padded = part.replaceAll("-", "+").replaceAll("_", "/").padEnd(Math.ceil(part.length / 4) * 4, "=");
-    const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
-    return JSON.parse(new TextDecoder().decode(bytes)) as GoogleIdClaims;
+    return JSON.parse(decodeBase64Url(part)) as GoogleIdClaims;
   } catch {
     return null;
   }

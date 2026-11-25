@@ -84,6 +84,13 @@ export function normalizeRecord(record: PiyoRecord, timeZone = TIMEZONE): Normal
   return { ...base, kind: "unknown", raw: record };
 }
 
+export function normalizeAll(records: PiyoRecord[]): NormalizedRecord[] {
+  return records
+    .map((record) => normalizeRecord(record))
+    .filter((record): record is NormalizedRecord => record !== null)
+    .sort((left, right) => Date.parse(left.datetime) - Date.parse(right.datetime));
+}
+
 export const CATEGORIES: Record<string, readonly string[]> = {
   feeding: FEEDING_TYPES,
   sleep: ["Sleep", "WakeUp"],

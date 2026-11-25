@@ -1,4 +1,4 @@
-import { passwordsEqual } from "./crypto";
+import { passwordsEqual } from "./crypto.ts";
 
 /**
  * 家族共有パスワード (AUTH_PASSWORD) と照合する。認可画面でのログインにだけ使う。
