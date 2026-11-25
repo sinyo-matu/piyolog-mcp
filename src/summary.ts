@@ -1,6 +1,6 @@
 import { addDays, daysBetween } from "./date.ts";
 import { TIMEZONE, todayInZone } from "./time.ts";
-import { normalizeAll, type NormalizedRecord } from "./records.ts";
+import { isMilkFeed, normalizeAll, type NormalizedRecord } from "./records.ts";
 import type { PiyoRecord } from "./types.ts";
 
 const MINUTE_MS = 60_000;
@@ -9,7 +9,6 @@ const DAY_MS = 86_400_000;
 const MAX_SLEEP_MS = 14 * 60 * MINUTE_MS;
 /** Feeds that start this close together count as one session. */
 const FEEDING_SESSION_MS = 30 * MINUTE_MS;
-const MILK_TYPES = new Set(["BreastFeeding", "Formula", "ExpressedBreastMilk"]);
 
 function dayStart(date: string): number {
   return Date.parse(`${date}T00:00:00+09:00`);
@@ -76,9 +75,6 @@ function addRecord(row: DaySummary, record: NormalizedRecord): void {
   row.recordCount += 1;
   if (record.type === "Pee") row.peeCount += 1;
   if (record.type === "Poop") row.poopCount += 1;
-  if (!["breast", "milk", "pumping", "food"].includes(record.kind)) {
-    return;
-  }
   const { ml, unsummed } = recordedMl(record);
   switch (record.type) {
     case "BreastFeeding":
@@ -112,6 +108,8 @@ function addRecord(row: DaySummary, record: NormalizedRecord): void {
       return;
     case "Snack":
       row.snackCount += 1;
+      return;
+    default:
       return;
   }
   row.unsummedAmounts += unsummed ? 1 : 0;
@@ -153,7 +151,7 @@ function feedingIntervals(sorted: NormalizedRecord[], now: number): Array<{ date
   let previous: number | null = null;
   for (const record of sorted) {
     const time = Date.parse(record.datetime);
-    if (!MILK_TYPES.has(record.type) || time > now) {
+    if (!isMilkFeed(record) || time > now) {
       continue;
     }
     if (previous !== null && time - previous < FEEDING_SESSION_MS) {

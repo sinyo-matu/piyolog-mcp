@@ -90,6 +90,23 @@ describe("feeding", () => {
   });
 });
 
+describe("other records", () => {
+  it("does not count measurements or events as unsummed feeding amounts", () => {
+    const [row] = days(
+      [
+        record("2026-09-01T01:00", "Weight", { value: { value: 6.1, unit: "kg" } }),
+        record("2026-09-01T02:00", "Temperature", { value: { value: 36.8, unit: "℃" } }),
+        record("2026-09-01T03:00", "Medicine", { value: { value: 1, unit: "包" } }),
+        record("2026-09-01T04:00", "Solid", { value: { value: 80, unit: "g" } }),
+      ],
+      "2026-09-01",
+      "2026-09-01",
+    );
+    assert.equal(row?.recordCount, 4);
+    assert.equal(row?.unsummedAmounts, 0);
+  });
+});
+
 describe("buildSummary", () => {
   const query = { from: "2026-09-08", to: "2026-09-10", groupBy: "day" as const, compare: false };
 
