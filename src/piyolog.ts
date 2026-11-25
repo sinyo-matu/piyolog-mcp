@@ -231,6 +231,18 @@ async function staleFeed(kv: KVNamespace, archive: Archive, staleReason: StaleRe
   return feed;
 }
 
+/** The feed URL is a secret, so never log an error message, a URL or a response body. */
+function logFeedFailure(error: unknown, attempt: number): void {
+  const code = error instanceof FeedError ? error.code : undefined;
+  console.warn({
+    event: "feed_failed",
+    attempt,
+    error: error instanceof Error ? error.name : "unknown",
+    ...(error instanceof FeedError ? { status: error.status } : {}),
+    ...(code && /^[\w.-]{1,64}$/.test(code) ? { code } : {}),
+  });
+}
+
 async function readCache(kv: KVNamespace, key: string): Promise<FeedSnapshot | null> {
   const cached = await kv.get(key);
   return cached ? parseCachedSnapshot(JSON.parse(cached)) : null;
@@ -247,7 +259,8 @@ async function syncFeed(env: Env): Promise<{ feed: FeedSnapshot; archive?: Archi
   let live: FeedSnapshot;
   try {
     live = await fetchLiveFeed(env);
-  } catch {
+  } catch (error) {
+    logFeedFailure(error, 1);
     // Parallel requests can all find the cache expired and fetch at once. Wait, then use what another one cached.
     await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
     const synced = await readCache(env.OAUTH_KV, CACHE_KEY);
@@ -257,6 +270,7 @@ async function syncFeed(env: Env): Promise<{ feed: FeedSnapshot; archive?: Archi
     try {
       live = await fetchLiveFeed(env);
     } catch (error) {
+      logFeedFailure(error, 2);
       if (archive.records.length === 0) {
         throw error;
       }
@@ -266,6 +280,7 @@ async function syncFeed(env: Env): Promise<{ feed: FeedSnapshot; archive?: Archi
 
   // An empty feed would delete every stored record in the window. Treat it as a feed fault.
   if (live.records.length === 0 && archive.records.some((record) => record.datetime >= live.range.from)) {
+    console.warn({ event: "feed_empty" });
     return { feed: await staleFeed(env.OAUTH_KV, archive, "empty_feed"), archive };
   }
 

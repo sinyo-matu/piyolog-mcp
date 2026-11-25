@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { afterEach, describe, it } from "node:test";
+import { afterEach, describe, it, mock } from "node:test";
 import { FeedError, loadFeed, loadRange, syncArchive } from "./piyolog.ts";
 import type { FeedSnapshot, PiyoRecord } from "./types.ts";
 
@@ -412,5 +412,33 @@ describe("parallel syncs", () => {
     kv.values.set("cache:piyolog-feed", JSON.stringify(fresh));
     assert.equal((await loadFeed(envFor(kv))).staleReason, undefined);
     assert.equal(kv.puts.filter((key) => key === "cache:piyolog-feed").length, 1);
+  });
+});
+
+describe("feed failure logs", () => {
+  afterEach(() => mock.restoreAll());
+
+  it("logs the status and code of each attempt", async () => {
+    const warn = mock.method(console, "warn", () => {});
+    stubFeed(429, { error: { code: "rate_limited" } });
+    await assert.rejects(loadFeed(envFor(new MemoryKv())));
+    assert.deepEqual(
+      warn.mock.calls.map((call) => call.arguments[0]),
+      [1, 2].map((attempt) => ({ event: "feed_failed", attempt, error: "FeedError", status: 429, code: "rate_limited" })),
+    );
+  });
+
+  it("never logs the URL, the message or an unexpected code", async () => {
+    const warn = mock.method(console, "warn", () => {});
+    globalThis.fetch = async () => {
+      throw new TypeError(`failed to fetch ${FEED_URL}`);
+    };
+    await assert.rejects(loadFeed(envFor(new MemoryKv())));
+    stubFeed(500, { error: { code: FEED_URL } });
+    await assert.rejects(loadFeed(envFor(new MemoryKv())));
+    const logged = JSON.stringify(warn.mock.calls.map((call) => call.arguments));
+    assert.equal(warn.mock.callCount(), 4);
+    assert.equal(logged.includes("feed.example"), false);
+    assert.equal(logged.includes("failed to fetch"), false);
   });
 });
