@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { FeedError, loadFeed, loadRange } from "./piyolog.ts";
+import { FeedError, loadFeed, loadRange, syncArchive } from "./piyolog.ts";
 import type { FeedSnapshot, PiyoRecord } from "./types.ts";
 
 const FEED_URL = "https://feed.example/v1/feed/28d/id/secret";
@@ -335,5 +335,26 @@ describe("loadRange", () => {
       assert.deepEqual(snapshot.records.map((item) => item.event_id), ["boundary"]);
       assert.equal(snapshot.staleReason, "request_failed");
     }
+  });
+});
+
+describe("syncArchive", () => {
+  it("stores the feed without any tool call", async () => {
+    const kv = new MemoryKv();
+    const stored = record("stored", "2026-09-20T00:00:00.000Z");
+    stubFeed(200, feed("2026-08-27T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [stored]));
+    await syncArchive(envFor(kv));
+    assert.deepEqual(monthRecords(kv, "2026-09"), [stored]);
+  });
+
+  it("fails without changing the archive when the feed is unusable", async () => {
+    const kv = new MemoryKv();
+    const stored = record("stored", "2026-09-20T00:00:00.000Z");
+    stubFeed(200, feed("2026-08-27T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [stored]));
+    await syncArchive(envFor(kv));
+    kv.values.delete("cache:piyolog-feed");
+    stubFeed(500, {});
+    await assert.rejects(syncArchive(envFor(kv)), FeedError);
+    assert.deepEqual(monthRecords(kv, "2026-09"), [stored]);
   });
 });

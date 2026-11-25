@@ -3,6 +3,7 @@ import { app } from "./app";
 import { authTtlSeconds } from "./config";
 import { toolsCheckPage, type ChatgptScanReport, type ChatgptToolAd } from "./html";
 import { handleMcp } from "./mcp";
+import { syncArchive } from "./piyolog";
 
 const DISCOVERY_METHODS = new Set([
   "initialize",
@@ -351,5 +352,9 @@ export default {
       return withBearerTokenType(response);
     }
     return response;
+  },
+
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    await syncArchive(env);
   },
 };

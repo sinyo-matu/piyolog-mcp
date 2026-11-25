@@ -13,6 +13,10 @@
       "preview_id": "local-oauth-kv",
     },
   ],
+  // Keep the archive current even when no tool is called. 18:00 UTC is 03:00 JST.
+  "triggers": {
+    "crons": ["0 18 * * *"],
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
