@@ -12,13 +12,14 @@ type ArchiveIndex = {
 };
 
 export class FeedError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: string,
-  ) {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.name = "FeedError";
+    this.status = status;
+    this.code = code;
   }
 }
 
