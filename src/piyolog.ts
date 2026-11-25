@@ -273,6 +273,14 @@ export async function loadFeed(env: Env): Promise<FeedSnapshot> {
   return combine((archive ?? (await readArchive(env.OAUTH_KV))).records, feed);
 }
 
+/** For the cron trigger. Throws on a stale feed so the run is reported as failed. */
+export async function syncArchive(env: Env): Promise<void> {
+  const { feed } = await syncFeed(env);
+  if (feed.staleReason) {
+    throw new FeedError("Scheduled feed sync failed", 502, feed.staleReason);
+  }
+}
+
 const DAY_MS = 86_400_000;
 
 /**
