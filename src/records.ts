@@ -66,6 +66,10 @@ export function isMilkFeed(record: NormalizedRecord): boolean {
   return record.kind === "breast" || record.kind === "milk";
 }
 
+function wholeSeconds(seconds: number | undefined): number | undefined {
+  return typeof seconds === "number" ? Math.round(seconds) : undefined;
+}
+
 /** Null when the record has no usable id, type or datetime. */
 export function normalizeRecord(record: PiyoRecord, timeZone = TIMEZONE): NormalizedRecord | null {
   if (
@@ -96,8 +100,8 @@ export function normalizeRecord(record: PiyoRecord, timeZone = TIMEZONE): Normal
     return {
       ...base,
       kind: known.kind,
-      leftSeconds: record.leftTime,
-      rightSeconds: record.rightTime,
+      leftSeconds: wholeSeconds(record.leftTime),
+      rightSeconds: wholeSeconds(record.rightTime),
       lastSide: record.last,
     };
   }

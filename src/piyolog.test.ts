@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { afterEach, describe, it } from "node:test";
+import { afterEach, describe, it, mock } from "node:test";
 import { FeedError, loadFeed, loadRange, syncArchive } from "./piyolog.ts";
 import type { FeedSnapshot, PiyoRecord } from "./types.ts";
 
@@ -64,6 +64,11 @@ function indexMonths(kv: MemoryKv): string[] {
   return (JSON.parse(raw) as { months: string[] }).months;
 }
 
+function expireCache(kv: MemoryKv): void {
+  kv.values.delete("cache:piyolog-feed");
+  kv.values.delete("cache:piyolog-stale");
+}
+
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
@@ -102,7 +107,7 @@ describe("feed archive updates", () => {
     const september = record("sep-10", "2026-09-10T00:00:00.000Z");
     stubFeed(200, feed("2026-07-28T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [august, september]));
     await loadFeed(envFor(kv));
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     kv.puts = [];
     const added = record("sep-24", "2026-09-24T01:00:00.000Z", 80);
     stubFeed(200, feed("2026-07-28T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [august, september, added]));
@@ -121,7 +126,7 @@ describe("feed archive updates", () => {
     const kv = new MemoryKv();
     stubFeed(200, feed("2026-08-27T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [record("milk", "2026-09-24T01:00:00.000Z", 120)]));
     await loadFeed(envFor(kv));
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     const edited = record("milk", "2026-09-24T01:00:00.000Z", 150);
     stubFeed(200, feed("2026-08-27T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [edited]));
 
@@ -139,7 +144,7 @@ describe("feed archive updates", () => {
     const removed = record("removed", "2026-09-24T01:00:00.000Z");
     stubFeed(200, feed("2026-08-27T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [kept, removed]));
     await loadFeed(envFor(kv));
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     stubFeed(200, feed("2026-08-27T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [kept]));
 
     const snapshot = await loadFeed(envFor(kv));
@@ -157,7 +162,7 @@ describe("feed archive updates", () => {
     const current = record("current", "2026-09-10T00:00:00.000Z");
     stubFeed(200, feed("2026-07-28T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [aged, current]));
     await loadFeed(envFor(kv));
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     kv.puts = [];
     stubFeed(200, feed("2026-09-01T00:00:00.000Z", "2026-09-28T03:00:00.000Z", [current]));
 
@@ -176,7 +181,7 @@ describe("feed archive updates", () => {
     const aged = record("aged", "2026-08-01T00:00:00.000Z", 120);
     stubFeed(200, feed("2026-07-28T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [aged]));
     await loadFeed(envFor(kv));
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     stubFeed(200, feed("2026-09-01T00:00:00.000Z", "2026-09-28T03:00:00.000Z", []));
 
     const snapshot = await loadFeed(envFor(kv));
@@ -191,7 +196,7 @@ describe("feed archive updates", () => {
     const aged = record("aged", "2026-08-01T00:00:00.000Z");
     stubFeed(200, feed("2026-07-28T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [aged]));
     await loadFeed(envFor(kv));
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     stubFeed(200, feed("2026-09-01T00:00:00.000Z", "2026-09-28T03:00:00.000Z", []));
 
     const snapshot = await loadFeed(envFor(kv));
@@ -207,7 +212,7 @@ describe("feed archive updates", () => {
     const kv = new MemoryKv();
     stubFeed(200, feed("2026-07-28T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [record("moved", "2026-08-23T00:00:00.000Z", 120)]));
     await loadFeed(envFor(kv));
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     const moved = record("moved", "2026-10-01T00:00:00.000Z", 150);
     stubFeed(200, feed("2026-09-24T00:00:00.000Z", "2026-10-22T03:00:00.000Z", [moved]));
 
@@ -226,7 +231,7 @@ describe("feed archive updates", () => {
     const stored = record("stored", "2026-09-01T00:00:00.000Z", 90);
     stubFeed(200, feed("2026-08-04T00:00:00.000Z", "2026-09-01T03:00:00.000Z", [stored]));
     await loadFeed(envFor(kv));
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     kv.puts = [];
     stubFeed(500, { error: { code: "feed_unavailable" } });
 
@@ -235,8 +240,8 @@ describe("feed archive updates", () => {
     assert.deepEqual(snapshot.records, [stored]);
     assert.equal(snapshot.staleReason, "request_failed");
     assert.equal((await loadFeed(envFor(kv))).staleReason, "request_failed");
-    assert.deepEqual(kv.puts, ["cache:piyolog-feed"]);
-    assert.equal(kv.ttl.get("cache:piyolog-feed"), 60);
+    assert.deepEqual(kv.puts, ["cache:piyolog-stale"]);
+    assert.equal(kv.ttl.get("cache:piyolog-stale"), 60);
     assert.deepEqual(monthRecords(kv, "2026-09"), [stored]);
   });
 
@@ -245,7 +250,7 @@ describe("feed archive updates", () => {
     const stored = record("stored", "2026-09-20T00:00:00.000Z");
     stubFeed(200, feed("2026-08-27T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [stored]));
     await loadFeed(envFor(kv));
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     kv.puts = [];
     stubFeed(200, feed("2026-08-28T00:00:00.000Z", "2026-09-25T03:00:00.000Z", []));
 
@@ -255,8 +260,8 @@ describe("feed archive updates", () => {
     assert.equal(snapshot.staleReason, "empty_feed");
     assert.equal(snapshot.generated_at, "2026-09-24T03:00:00.000Z");
     assert.deepEqual(monthRecords(kv, "2026-09"), [stored]);
-    assert.deepEqual(kv.puts, ["cache:piyolog-feed"]);
-    assert.equal(kv.ttl.get("cache:piyolog-feed"), 60);
+    assert.deepEqual(kv.puts, ["cache:piyolog-stale"]);
+    assert.equal(kv.ttl.get("cache:piyolog-stale"), 60);
   });
 
   it("reports the last successful fetch and clears the stale mark on recovery", async () => {
@@ -264,14 +269,14 @@ describe("feed archive updates", () => {
     const stored = record("stored", "2026-09-20T00:00:00.000Z");
     stubFeed(200, feed("2026-08-27T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [stored]));
     await loadFeed(envFor(kv));
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     stubFeed(200, feed("2026-08-28T00:00:00.000Z", "2026-09-25T03:00:00.000Z", [stored]));
     await loadFeed(envFor(kv));
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     stubFeed(500, {});
 
     const stale = await loadFeed(envFor(kv));
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     stubFeed(200, feed("2026-08-29T00:00:00.000Z", "2026-09-26T03:00:00.000Z", [stored]));
     const fresh = await loadFeed(envFor(kv));
 
@@ -305,7 +310,7 @@ describe("loadRange", () => {
     };
     stubFeed(200, feed("2026-06-01T00:00:00.000Z", "2026-06-28T00:00:00.000Z", [record("june", "2026-06-15T00:00:00.000Z")]));
     await loadFeed(envFor(kv));
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     stubFeed(200, feed("2026-08-28T00:00:00.000Z", "2026-09-25T00:00:00.000Z", [record("boundary", "2026-08-31T15:30:00.000Z"), record("sep", "2026-09-20T00:00:00.000Z")]));
     await loadFeed(envFor(kv));
     kv.gets.length = 0;
@@ -328,7 +333,7 @@ describe("loadRange", () => {
 
   it("finds a record whose JST date is in the month after its UTC month, even when stale", async () => {
     const kv = await seeded();
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     stubFeed(500, {});
     for (let call = 0; call < 2; call += 1) {
       const snapshot = await loadRange(envFor(kv), "2026-09-01", "2026-09-01");
@@ -352,9 +357,88 @@ describe("syncArchive", () => {
     const stored = record("stored", "2026-09-20T00:00:00.000Z");
     stubFeed(200, feed("2026-08-27T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [stored]));
     await syncArchive(envFor(kv));
-    kv.values.delete("cache:piyolog-feed");
+    expireCache(kv);
     stubFeed(500, {});
     await assert.rejects(syncArchive(envFor(kv)), FeedError);
     assert.deepEqual(monthRecords(kv, "2026-09"), [stored]);
+  });
+});
+
+describe("parallel syncs", () => {
+  const stored = record("stored", "2026-09-20T00:00:00.000Z");
+  const added = record("added", "2026-09-24T00:00:00.000Z");
+  const old = feed("2026-08-27T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [stored]);
+  const fresh = feed("2026-08-27T00:00:00.000Z", "2026-09-24T04:00:00.000Z", [stored, added]);
+
+  async function seeded(): Promise<MemoryKv> {
+    const kv = new MemoryKv();
+    stubFeed(200, old);
+    await loadFeed(envFor(kv));
+    expireCache(kv);
+    return kv;
+  }
+
+  it("uses the feed that another request cached when its own fetch fails", async () => {
+    const kv = await seeded();
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      kv.values.set("cache:piyolog-feed", JSON.stringify(fresh));
+      return new Response("{}", { status: 429 });
+    };
+    const snapshot = await loadFeed(envFor(kv));
+    assert.equal(snapshot.staleReason, undefined);
+    assert.deepEqual(snapshot.records.map((item) => item.event_id), ["stored", "added"]);
+    assert.equal(calls, 1);
+  });
+
+  it("retries the feed once when nothing was cached", async () => {
+    const kv = await seeded();
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      return calls === 1 ? new Response("{}", { status: 503 }) : Response.json(fresh);
+    };
+    const snapshot = await loadFeed(envFor(kv));
+    assert.equal(snapshot.staleReason, undefined);
+    assert.deepEqual(monthRecords(kv, "2026-09"), [stored, added]);
+    assert.equal(calls, 2);
+  });
+
+  it("prefers a fresh feed over a stale one and does not replace it", async () => {
+    const kv = await seeded();
+    stubFeed(503, {});
+    assert.equal((await loadFeed(envFor(kv))).staleReason, "request_failed");
+    kv.values.set("cache:piyolog-feed", JSON.stringify(fresh));
+    assert.equal((await loadFeed(envFor(kv))).staleReason, undefined);
+    assert.equal(kv.puts.filter((key) => key === "cache:piyolog-feed").length, 1);
+  });
+});
+
+describe("feed failure logs", () => {
+  afterEach(() => mock.restoreAll());
+
+  it("logs the status and code of each attempt", async () => {
+    const warn = mock.method(console, "warn", () => {});
+    stubFeed(429, { error: { code: "rate_limited" } });
+    await assert.rejects(loadFeed(envFor(new MemoryKv())));
+    assert.deepEqual(
+      warn.mock.calls.map((call) => call.arguments[0]),
+      [1, 2].map((attempt) => ({ event: "feed_failed", attempt, error: "FeedError", status: 429, code: "rate_limited" })),
+    );
+  });
+
+  it("never logs the URL, the message or an unexpected code", async () => {
+    const warn = mock.method(console, "warn", () => {});
+    globalThis.fetch = async () => {
+      throw new TypeError(`failed to fetch ${FEED_URL}`);
+    };
+    await assert.rejects(loadFeed(envFor(new MemoryKv())));
+    stubFeed(500, { error: { code: FEED_URL } });
+    await assert.rejects(loadFeed(envFor(new MemoryKv())));
+    const logged = JSON.stringify(warn.mock.calls.map((call) => call.arguments));
+    assert.equal(warn.mock.callCount(), 4);
+    assert.equal(logged.includes("feed.example"), false);
+    assert.equal(logged.includes("failed to fetch"), false);
   });
 });

@@ -1,6 +1,9 @@
 import type { FeedSnapshot, PiyoRecord, StaleReason } from "./types.ts";
 
 const CACHE_KEY = "cache:piyolog-feed";
+// Kept apart from CACHE_KEY, so a failed sync never replaces a feed that another request just cached.
+const STALE_CACHE_KEY = "cache:piyolog-stale";
+const RETRY_DELAY_MS = 500;
 const CACHE_TTL_SECONDS = 900;
 const ARCHIVE_INDEX_KEY = "archive:index";
 const FALLBACK_TTL_SECONDS = 60;
@@ -224,15 +227,32 @@ async function staleFeed(kv: KVNamespace, archive: Archive, staleReason: StaleRe
     ),
     staleReason,
   };
-  await kv.put(CACHE_KEY, JSON.stringify(feed), { expirationTtl: FALLBACK_TTL_SECONDS });
+  await kv.put(STALE_CACHE_KEY, JSON.stringify(feed), { expirationTtl: FALLBACK_TTL_SECONDS });
   return feed;
+}
+
+/** The feed URL is a secret, so never log an error message, a URL or a response body. */
+function logFeedFailure(error: unknown, attempt: number): void {
+  const code = error instanceof FeedError ? error.code : undefined;
+  console.warn({
+    event: "feed_failed",
+    attempt,
+    error: error instanceof Error ? error.name : "unknown",
+    ...(error instanceof FeedError ? { status: error.status } : {}),
+    ...(code && /^[\w.-]{1,64}$/.test(code) ? { code } : {}),
+  });
+}
+
+async function readCache(kv: KVNamespace, key: string): Promise<FeedSnapshot | null> {
+  const cached = await kv.get(key);
+  return cached ? parseCachedSnapshot(JSON.parse(cached)) : null;
 }
 
 /** Refresh the archive at most once per cache period. Reads every month, because an edit can move a record out of an old one. */
 async function syncFeed(env: Env): Promise<{ feed: FeedSnapshot; archive?: Archive }> {
-  const cached = await env.OAUTH_KV.get(CACHE_KEY);
+  const cached = (await readCache(env.OAUTH_KV, CACHE_KEY)) ?? (await readCache(env.OAUTH_KV, STALE_CACHE_KEY));
   if (cached) {
-    return { feed: parseCachedSnapshot(JSON.parse(cached)) };
+    return { feed: cached };
   }
 
   const archive = await readArchive(env.OAUTH_KV);
@@ -240,14 +260,27 @@ async function syncFeed(env: Env): Promise<{ feed: FeedSnapshot; archive?: Archi
   try {
     live = await fetchLiveFeed(env);
   } catch (error) {
-    if (archive.records.length === 0) {
-      throw error;
+    logFeedFailure(error, 1);
+    // Parallel requests can all find the cache expired and fetch at once. Wait, then use what another one cached.
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+    const synced = await readCache(env.OAUTH_KV, CACHE_KEY);
+    if (synced) {
+      return { feed: synced };
     }
-    return { feed: await staleFeed(env.OAUTH_KV, archive, "request_failed"), archive };
+    try {
+      live = await fetchLiveFeed(env);
+    } catch (error) {
+      logFeedFailure(error, 2);
+      if (archive.records.length === 0) {
+        throw error;
+      }
+      return { feed: await staleFeed(env.OAUTH_KV, archive, "request_failed"), archive };
+    }
   }
 
   // An empty feed would delete every stored record in the window. Treat it as a feed fault.
   if (live.records.length === 0 && archive.records.some((record) => record.datetime >= live.range.from)) {
+    console.warn({ event: "feed_empty" });
     return { feed: await staleFeed(env.OAUTH_KV, archive, "empty_feed"), archive };
   }
 
