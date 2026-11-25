@@ -218,6 +218,8 @@ async function mcpRpc(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        // A Request built here has no Host, and the MCP handler rejects that.
+        Host: new URL(origin).host,
       },
       body: JSON.stringify(payload),
     }),
