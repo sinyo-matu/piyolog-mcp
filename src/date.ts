@@ -1,3 +1,5 @@
+const DAY_MS = 86_400_000;
+
 /** Empty means today. Anything else must be a real YYYY-MM-DD date. */
 export function resolveDate(date: string | undefined, today: string): string {
   const value = date?.trim();
@@ -11,4 +13,13 @@ export function resolveDate(date: string | undefined, today: string): string {
     }
   }
   throw new Error("date は実在する日付を YYYY-MM-DD で指定してください");
+}
+
+export function addDays(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T00:00:00.000Z`) + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** Inclusive number of dates. */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) / DAY_MS) + 1;
 }

@@ -1,4 +1,4 @@
-import type { FeedSnapshot, PiyoRecord, StaleReason } from "./types";
+import type { FeedSnapshot, PiyoRecord, StaleReason } from "./types.ts";
 
 const CACHE_KEY = "cache:piyolog-feed";
 const CACHE_TTL_SECONDS = 900;
@@ -154,11 +154,6 @@ async function persistArchive(
 ): Promise<void> {
   const before = groupByMonth(sortRecords(previous));
   const after = groupByMonth(sortRecords(next));
-  for (const list of before.values()) {
-    sortRecords(list).forEach((record, index) => {
-      list[index] = record;
-    });
-  }
   const puts: Promise<unknown>[] = [];
   const removed: string[] = [];
   const months = new Set([...before.keys(), ...after.keys()]);

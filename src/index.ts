@@ -1,9 +1,10 @@
 import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
-import { app } from "./app";
-import { authTtlSeconds } from "./config";
-import { toolsCheckPage, type ChatgptScanReport, type ChatgptToolAd } from "./html";
-import { handleMcp } from "./mcp";
-import { syncArchive } from "./piyolog";
+import { app } from "./app.ts";
+import { authTtlSeconds } from "./config.ts";
+import { toolsCheckPage } from "./html.ts";
+import { handleMcp } from "./mcp.ts";
+import { syncArchive } from "./piyolog.ts";
+import { scanAsChatgpt } from "./selfcheck.ts";
 
 const DISCOVERY_METHODS = new Set([
   "initialize",
@@ -19,14 +20,6 @@ const DISCOVERY_METHODS = new Set([
 ]);
 
 const OAUTH_SCHEMES = [{ type: "oauth2", scopes: ["mcp:read"] }];
-const EXPECTED_TOOLS = [
-  "get_latest_status",
-  "get_records",
-  "get_summary",
-  "search",
-  "fetch",
-];
-
 /**
  * OAuth 2.1 プロバイダーを組み立てる。
  * /mcp はアクセストークン必須の API として保護し、それ以外 (/authorize など) は Hono アプリに渡す。
@@ -205,138 +198,17 @@ async function withBearerTokenType(response: Response): Promise<Response> {
   return new Response(JSON.stringify(body), { status: response.status, headers });
 }
 
-async function mcpRpc(
-  origin: string,
-  env: Env,
-  ctx: ExecutionContext,
-  payload: Record<string, unknown>,
-): Promise<{ httpStatus: number; body: unknown }> {
-  const response = await serveMcp(
-    new Request(`${origin}/mcp`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        // A Request built here has no Host, and the MCP handler rejects that.
-        Host: new URL(origin).host,
-      },
-      body: JSON.stringify(payload),
-    }),
-    env,
-    ctx,
-  );
-  let body: unknown = null;
-  try {
-    body = await response.json();
-  } catch {
-    body = { error: "non-json MCP response" };
-  }
-  return { httpStatus: response.status, body };
-}
-
-function rpcResult(body: unknown): Record<string, unknown> | null {
-  if (!body || typeof body !== "object" || !("result" in body)) {
-    return null;
-  }
-  const result = (body as { result?: unknown }).result;
-  return result && typeof result === "object" ? (result as Record<string, unknown>) : null;
-}
-
-function rpcError(body: unknown): string | undefined {
-  if (!body || typeof body !== "object") {
-    return "invalid response";
-  }
-  const error = (body as { error?: { message?: unknown } }).error;
-  return typeof error?.message === "string" ? error.message : undefined;
-}
-
-async function scanAsChatgpt(request: Request, env: Env, ctx: ExecutionContext): Promise<ChatgptScanReport> {
-  const origin = new URL(request.url).origin;
-  const init = await mcpRpc(origin, env, ctx, {
-    jsonrpc: "2.0",
-    id: 1,
-    method: "initialize",
-    params: {
-      protocolVersion: "2025-03-26",
-      capabilities: {},
-      clientInfo: { name: "chatgpt-scan", version: "1.0" },
-    },
-  });
-  const initResult = rpcResult(init.body);
-  const serverInfo = initResult?.serverInfo as { name?: string; version?: string } | undefined;
-  const tools = await mcpRpc(origin, env, ctx, {
-    jsonrpc: "2.0",
-    id: 2,
-    method: "tools/list",
-    params: {},
-  });
-  const listed = rpcResult(tools.body)?.tools;
-  const toolAds: ChatgptToolAd[] = Array.isArray(listed)
-    ? listed.flatMap((item) => {
-        if (!item || typeof item !== "object" || typeof (item as { name?: unknown }).name !== "string") {
-          return [];
-        }
-        const tool = item as { name: string; title?: unknown; description?: unknown; securitySchemes?: unknown };
-        return [
-          {
-            name: tool.name,
-            title: typeof tool.title === "string" ? tool.title : undefined,
-            description: typeof tool.description === "string" ? tool.description : undefined,
-            securitySchemes: tool.securitySchemes,
-          },
-        ];
-      })
-    : [];
-  const call = await mcpRpc(origin, env, ctx, {
-    jsonrpc: "2.0",
-    id: 3,
-    method: "tools/call",
-    params: { name: "get_records", arguments: {} },
-  });
-  const callResult = rpcResult(call.body);
-  const callText = JSON.stringify(call.body);
-  const leakedRecords = /"records"\s*:/.test(callText) || /event_id/.test(callText);
-  return {
-    checkedAt: new Date().toISOString(),
-    endpoint: `${origin}/mcp`,
-    expected: EXPECTED_TOOLS,
-    initialize: {
-      httpStatus: init.httpStatus,
-      ok: init.httpStatus === 200 && Boolean(initResult),
-      serverName: serverInfo?.name,
-      version: serverInfo?.version,
-      error: rpcError(init.body),
-    },
-    toolsList: {
-      httpStatus: tools.httpStatus,
-      ok: tools.httpStatus === 200 && toolAds.length > 0,
-      names: toolAds.map((tool) => tool.name),
-      tools: toolAds,
-      error: rpcError(tools.body),
-    },
-    unauthCall: {
-      httpStatus: call.httpStatus,
-      ok:
-        !leakedRecords &&
-        (call.httpStatus === 401 || (call.httpStatus === 200 && callResult?.isError === true)),
-      isError: call.httpStatus === 401 || callResult?.isError === true,
-      leakedRecords,
-      error: rpcError(call.body),
-    },
-  };
-}
-
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/chatgpt-tools.json") {
-      return Response.json(await scanAsChatgpt(request, env, ctx), {
+      return Response.json(await scanAsChatgpt(url.origin, (check) => serveMcp(check, env, ctx)), {
         headers: { "Cache-Control": "no-store" },
       });
     }
     if (url.pathname === "/chatgpt-tools") {
-      return toolsCheckPage(await scanAsChatgpt(request, env, ctx));
+      return toolsCheckPage(await scanAsChatgpt(url.origin, (check) => serveMcp(check, env, ctx)));
     }
 
     if (url.pathname === "/mcp" && request.method === "OPTIONS") {

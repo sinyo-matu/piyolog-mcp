@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildLatest, buildSummary, normalizeAll, summarizeDays } from "./summary.ts";
+import { normalizeAll } from "./records.ts";
+import { buildLatest, buildSummary, summarizeDays } from "./summary.ts";
 import type { PiyoRecord } from "./types.ts";
 
 const NOW = new Date("2026-09-10T03:00:00.000Z");

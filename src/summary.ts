@@ -1,5 +1,6 @@
+import { addDays, daysBetween } from "./date.ts";
 import { TIMEZONE, todayInZone } from "./time.ts";
-import { normalizeRecord, type NormalizedRecord } from "./records.ts";
+import { normalizeAll, type NormalizedRecord } from "./records.ts";
 import type { PiyoRecord } from "./types.ts";
 
 const MINUTE_MS = 60_000;
@@ -10,24 +11,8 @@ const MAX_SLEEP_MS = 14 * 60 * MINUTE_MS;
 const FEEDING_SESSION_MS = 30 * MINUTE_MS;
 const MILK_TYPES = new Set(["BreastFeeding", "Formula", "ExpressedBreastMilk"]);
 
-export function addDays(date: string, days: number): string {
-  return new Date(Date.parse(`${date}T00:00:00.000Z`) + days * DAY_MS).toISOString().slice(0, 10);
-}
-
-/** Inclusive number of dates. */
-export function daysBetween(from: string, to: string): number {
-  return Math.round((Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) / DAY_MS) + 1;
-}
-
 function dayStart(date: string): number {
   return Date.parse(`${date}T00:00:00+09:00`);
-}
-
-export function normalizeAll(records: PiyoRecord[]): NormalizedRecord[] {
-  return records
-    .map((record) => normalizeRecord(record))
-    .filter((record): record is NormalizedRecord => record !== null)
-    .sort((left, right) => Date.parse(left.datetime) - Date.parse(right.datetime));
 }
 
 function emptyRow(date: string, today: string) {

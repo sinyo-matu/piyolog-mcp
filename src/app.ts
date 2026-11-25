@@ -1,10 +1,19 @@
 import type { AuthRequest, OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { Hono } from "hono";
-import { verifyAuthPassword } from "./auth";
-import { childName } from "./config";
-import { cookieFlags, cookieName, readCookie, signaturesEqual, signValue } from "./crypto";
-import { GOOGLE_CALLBACK_PATH, googleAuthUrl, googleLoginEnabled, verifyGoogleCode } from "./google";
-import { authorizePage, authorizeRedirectPage, homePage } from "./html";
+import { verifyAuthPassword } from "./auth.ts";
+import { childName } from "./config.ts";
+import {
+  cookieFlags,
+  cookieName,
+  decodeBase64Url,
+  encodeBase64Url,
+  readCookie,
+  signaturesEqual,
+  signValue,
+  toHex,
+} from "./crypto.ts";
+import { GOOGLE_CALLBACK_PATH, googleAuthUrl, googleLoginEnabled, verifyGoogleCode } from "./google.ts";
+import { authorizePage, authorizeRedirectPage, homePage } from "./html.ts";
 
 type AppEnv = Env & { OAUTH_PROVIDER: OAuthHelpers };
 
@@ -20,29 +29,12 @@ const GOOGLE_STATE_COOKIE = "GOOGLE_STATE";
 // iat は発行時刻 (UNIX 秒)。期限切れの判定に使う。
 type StoredOAuthRequest = { iat: number; request: AuthRequest };
 
-// UTF-8 文字列を base64url (パディングなし) に変換する。
-function encodeBytes(value: string): string {
-  const bytes = new TextEncoder().encode(value);
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
-}
-
-// encodeBytes の逆変換。不正な入力では例外を投げる。
-function decodeBytes(value: string): string {
-  const padded = value.replaceAll("-", "+").replaceAll("_", "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
-  const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
-}
-
 /**
  * 認可リクエストを `<base64url ペイロード>.<HMAC 署名>` 形式にする。
  * 署名により、クライアント側で redirect_uri などを書き換えられないようにする。
  */
 async function signOAuthRequest(env: Env, oauthRequest: AuthRequest): Promise<string> {
-  const payload = encodeBytes(
+  const payload = encodeBase64Url(
     JSON.stringify({ iat: Math.floor(Date.now() / 1000), request: oauthRequest } satisfies StoredOAuthRequest),
   );
   const signature = await signValue(payload, env.COOKIE_ENCRYPTION_KEY);
@@ -70,7 +62,7 @@ async function readSignedOAuthRequest(env: Env, value: string | null | undefined
   }
   // 署名検証を通った後でのみ中身をデコードする。
   try {
-    const stored = JSON.parse(decodeBytes(payload)) as StoredOAuthRequest;
+    const stored = JSON.parse(decodeBase64Url(payload)) as StoredOAuthRequest;
     if (!stored?.request?.clientId || !stored.request.redirectUri) {
       return null;
     }
@@ -83,7 +75,7 @@ async function readSignedOAuthRequest(env: Env, value: string | null | undefined
   }
 }
 
-async function signedOAuthCookie(request: Request, env: Env, signed: string): Promise<string> {
+function signedOAuthCookie(request: Request, signed: string): string {
   return `${cookieName(request, OAUTH_STATE_COOKIE)}=${encodeURIComponent(signed)}; ${cookieFlags(request)}; Max-Age=${OAUTH_REQ_TTL_SECONDS}`;
 }
 
@@ -100,7 +92,7 @@ function clearGoogleStateCookie(request: Request): string {
 }
 
 function randomState(): string {
-  return [...crypto.getRandomValues(new Uint8Array(32))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return toHex(crypto.getRandomValues(new Uint8Array(32)));
 }
 
 /**
@@ -166,7 +158,7 @@ app.get("/authorize", async (c) => {
     redirectUri: oauthRequest.redirectUri,
     google: googleLoginEnabled(c.env),
   });
-  response.headers.append("Set-Cookie", await signedOAuthCookie(c.req.raw, c.env, oauthReq));
+  response.headers.append("Set-Cookie", signedOAuthCookie(c.req.raw, oauthReq));
   return response;
 });
 
@@ -192,7 +184,7 @@ app.post("/authorize", async (c) => {
       error: message,
     });
     if (oauthReqValue) {
-      response.headers.append("Set-Cookie", await signedOAuthCookie(c.req.raw, c.env, oauthReqValue));
+      response.headers.append("Set-Cookie", signedOAuthCookie(c.req.raw, oauthReqValue));
     }
     return response;
   };

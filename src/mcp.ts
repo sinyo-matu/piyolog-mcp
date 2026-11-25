@@ -1,14 +1,14 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler, getMcpAuthContext } from "agents/mcp/server";
 import { z } from "zod";
-import { childName } from "./config";
-import { dayDocument, recordDocument, searchDocuments } from "./docs";
-import { resolveDate } from "./date";
-import { FeedError, loadFeed, loadRange } from "./piyolog";
-import { queryRecords } from "./records";
-import { addDays, buildLatest, buildSummary, daysBetween, previousRange } from "./summary";
-import { todayInZone } from "./time";
-import type { FeedSnapshot } from "./types";
+import { childName } from "./config.ts";
+import { dayDocument, recordDocument, searchDocuments } from "./docs.ts";
+import { addDays, daysBetween, resolveDate } from "./date.ts";
+import { FeedError, loadFeed, loadRange } from "./piyolog.ts";
+import { queryRecords } from "./records.ts";
+import { buildLatest, buildSummary, previousRange } from "./summary.ts";
+import { todayInZone } from "./time.ts";
+import type { FeedSnapshot } from "./types.ts";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
 const oauthSchemes = [{ type: "oauth2" as const, scopes: ["mcp:read"] }];

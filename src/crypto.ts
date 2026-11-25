@@ -1,14 +1,5 @@
 const encoder = new TextEncoder();
 
-export function escapeHtml(text: string): string {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 /** タイミング攻撃を避けるため、定数時間でパスワードを比較する。 */
 export async function passwordsEqual(provided: string, expected: string): Promise<boolean> {
   const a = encoder.encode(provided);
@@ -25,6 +16,23 @@ export async function passwordsEqual(provided: string, expected: string): Promis
   return sameBytes && a.byteLength === b.byteLength;
 }
 
+/** UTF-8 文字列を base64url (パディングなし) に変換する。 */
+export function encodeBase64Url(value: string): string {
+  const bytes = encoder.encode(value);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+
+/** encodeBase64Url の逆変換。不正な入力では例外を投げる。 */
+export function decodeBase64Url(value: string): string {
+  const padded = value.replaceAll("-", "+").replaceAll("_", "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
 async function hmacKey(secret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
     "sign",
@@ -32,7 +40,7 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
   ]);
 }
 
-function toHex(buffer: ArrayBuffer): string {
+export function toHex(buffer: ArrayBuffer | Uint8Array): string {
   return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 

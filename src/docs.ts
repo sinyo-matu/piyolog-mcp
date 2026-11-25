@@ -1,6 +1,6 @@
 import { resolveDate } from "./date.ts";
-import { queryRecords, type NormalizedRecord } from "./records.ts";
-import { normalizeAll, summarizeDays } from "./summary.ts";
+import { normalizeAll, queryRecords, type NormalizedRecord } from "./records.ts";
+import { summarizeDays } from "./summary.ts";
 import type { FeedSnapshot } from "./types.ts";
 
 const MAX_RESULTS = 20;
