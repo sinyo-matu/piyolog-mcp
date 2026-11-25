@@ -20,6 +20,7 @@ MCP エンドポイント: `https://<your-worker>.workers.dev/mcp`
 | `get_today_records` | 今日（JST）の全記録 JSON |
 | `get_latest_status` | 最新の授乳・睡眠・おむつ・体重 |
 | `get_feeding_records` | 指定日の食事・授乳 |
+| `get_records` | 期間(JST)と種別を指定した記録。ページ分割あり |
 | `get_all_records` | 保存済みの全件（分析用。28日を過ぎた記録も含む） |
 | `search` / `fetch` | 記録の検索と取得 |
 

@@ -1,6 +1,6 @@
 import type { FeedSnapshot, PiyoRecord, StaleReason } from "./types";
 
-const CACHE_KEY = "cache:piyolog-history";
+const CACHE_KEY = "cache:piyolog-feed";
 const CACHE_TTL_SECONDS = 900;
 const ARCHIVE_INDEX_KEY = "archive:index";
 const FALLBACK_TTL_SECONDS = 60;
@@ -113,7 +113,9 @@ function snapshotFrom(records: PiyoRecord[], generatedAt: string, rangeTo: strin
   };
 }
 
-async function readArchive(kv: KVNamespace): Promise<{ index: ArchiveIndex; records: PiyoRecord[] }> {
+type Archive = { index: ArchiveIndex; records: PiyoRecord[] };
+
+async function readArchive(kv: KVNamespace, wanted?: (month: string) => boolean): Promise<Archive> {
   const raw = await kv.get(ARCHIVE_INDEX_KEY);
   if (!raw) {
     return { index: { months: [], generatedAt: "", rangeTo: "" }, records: [] };
@@ -127,7 +129,8 @@ async function readArchive(kv: KVNamespace): Promise<{ index: ArchiveIndex; reco
   if (!Array.isArray(index.months) || index.months.length === 0) {
     return { index: { months: [], generatedAt: index.generatedAt ?? "", rangeTo: index.rangeTo ?? "" }, records: [] };
   }
-  const bodies = await Promise.all(index.months.map((month) => kv.get(monthStorageKey(month))));
+  const months = wanted ? index.months.filter(wanted) : index.months;
+  const bodies = await Promise.all(months.map((month) => kv.get(monthStorageKey(month))));
   const records: PiyoRecord[] = [];
   for (const body of bodies) {
     if (!body) {
@@ -215,28 +218,26 @@ async function fetchLiveFeed(env: Env): Promise<FeedSnapshot> {
   return parseSnapshot(await response.json());
 }
 
-async function staleSnapshot(
-  kv: KVNamespace,
-  archive: { index: ArchiveIndex; records: PiyoRecord[] },
-  staleReason: StaleReason,
-): Promise<FeedSnapshot> {
-  const snapshot = {
+/** The live window, or an empty feed with staleReason when the archive is all there is. */
+async function staleFeed(kv: KVNamespace, archive: Archive, staleReason: StaleReason): Promise<FeedSnapshot> {
+  const feed = {
     ...snapshotFrom(
-      archive.records,
+      [],
       archive.index.generatedAt || new Date().toISOString(),
       archive.index.rangeTo || archive.records.at(-1)?.datetime || new Date().toISOString(),
       archive.records[0]?.datetime ?? new Date().toISOString(),
     ),
     staleReason,
   };
-  await kv.put(CACHE_KEY, JSON.stringify(snapshot), { expirationTtl: FALLBACK_TTL_SECONDS });
-  return snapshot;
+  await kv.put(CACHE_KEY, JSON.stringify(feed), { expirationTtl: FALLBACK_TTL_SECONDS });
+  return feed;
 }
 
-export async function loadFeed(env: Env): Promise<FeedSnapshot> {
+/** Refresh the archive at most once per cache period. Reads every month, because an edit can move a record out of an old one. */
+async function syncFeed(env: Env): Promise<{ feed: FeedSnapshot; archive?: Archive }> {
   const cached = await env.OAUTH_KV.get(CACHE_KEY);
   if (cached) {
-    return parseCachedSnapshot(JSON.parse(cached));
+    return { feed: parseCachedSnapshot(JSON.parse(cached)) };
   }
 
   const archive = await readArchive(env.OAUTH_KV);
@@ -247,17 +248,59 @@ export async function loadFeed(env: Env): Promise<FeedSnapshot> {
     if (archive.records.length === 0) {
       throw error;
     }
-    return staleSnapshot(env.OAUTH_KV, archive, "request_failed");
+    return { feed: await staleFeed(env.OAUTH_KV, archive, "request_failed"), archive };
   }
 
   // An empty feed would delete every stored record in the window. Treat it as a feed fault.
   if (live.records.length === 0 && archive.records.some((record) => record.datetime >= live.range.from)) {
-    return staleSnapshot(env.OAUTH_KV, archive, "empty_feed");
+    return { feed: await staleFeed(env.OAUTH_KV, archive, "empty_feed"), archive };
   }
 
   const records = mergeFeedArchive(archive.records, live);
   await persistArchive(env.OAUTH_KV, archive.index, archive.records, records, live);
-  const snapshot = snapshotFrom(records, live.generated_at, live.range.to, live.range.from);
-  await env.OAUTH_KV.put(CACHE_KEY, JSON.stringify(snapshot), { expirationTtl: CACHE_TTL_SECONDS });
-  return snapshot;
+  await env.OAUTH_KV.put(CACHE_KEY, JSON.stringify(live), { expirationTtl: CACHE_TTL_SECONDS });
+  return { feed: live, archive };
+}
+
+function combine(stored: PiyoRecord[], feed: FeedSnapshot): FeedSnapshot {
+  const records = feed.staleReason ? stored : mergeFeedArchive(stored, feed);
+  const snapshot = snapshotFrom(records, feed.generated_at, feed.range.to, feed.range.from);
+  return feed.staleReason ? { ...snapshot, staleReason: feed.staleReason } : snapshot;
+}
+
+export async function loadFeed(env: Env): Promise<FeedSnapshot> {
+  const { feed, archive } = await syncFeed(env);
+  return combine((archive ?? (await readArchive(env.OAUTH_KV))).records, feed);
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Records covering the local dates from..to, reading only the months they need.
+ * Neighbouring days may be included, so callers still filter by local date.
+ */
+export async function loadRange(env: Env, from: string, to: string): Promise<FeedSnapshot> {
+  const { feed, archive } = await syncFeed(env);
+  // Month keys are UTC and the dates are local, so widen by a day on each side.
+  const start = Date.parse(`${from}T00:00:00.000Z`) - DAY_MS;
+  const end = Date.parse(`${to}T00:00:00.000Z`) + 2 * DAY_MS;
+  const firstMonth = monthOf(new Date(start).toISOString());
+  const lastMonth = monthOf(new Date(end).toISOString());
+  const wanted = (month: string) => month >= firstMonth && month <= lastMonth;
+
+  let stored: PiyoRecord[] = [];
+  if (feed.staleReason || start < Date.parse(feed.range.from)) {
+    stored = archive
+      ? archive.records.filter((record) => wanted(monthOf(record.datetime)))
+      : (await readArchive(env.OAUTH_KV, wanted)).records;
+  }
+  const snapshot = combine(stored, feed);
+  return {
+    ...snapshot,
+    range: { from, to },
+    records: snapshot.records.filter((record) => {
+      const time = Date.parse(record.datetime);
+      return Number.isNaN(time) || (time >= start && time < end);
+    }),
+  };
 }
