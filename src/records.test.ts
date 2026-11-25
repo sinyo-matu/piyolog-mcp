@@ -14,6 +14,16 @@ describe("normalizeRecord", () => {
     assert.deepEqual(result?.amount, { left: 40, right: 50, unit: "ml" });
   });
 
+  it("rounds breastfeeding time to whole seconds", () => {
+    const result = normalizeRecord({
+      ...record("b", "2026-09-01T00:00:00.000Z", "BreastFeeding"),
+      leftTime: 637.06,
+      rightTime: 683.68,
+    });
+    assert.equal(result?.kind === "breast" ? result.leftSeconds : null, 637);
+    assert.equal(result?.kind === "breast" ? result.rightSeconds : null, 684);
+  });
+
   it("keeps an unknown type with its raw record", () => {
     const source = record("x", "2026-09-01T00:00:00.000Z", "NewType");
     const result = normalizeRecord(source);

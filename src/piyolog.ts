@@ -1,6 +1,9 @@
 import type { FeedSnapshot, PiyoRecord, StaleReason } from "./types.ts";
 
 const CACHE_KEY = "cache:piyolog-feed";
+// Kept apart from CACHE_KEY, so a failed sync never replaces a feed that another request just cached.
+const STALE_CACHE_KEY = "cache:piyolog-stale";
+const RETRY_DELAY_MS = 500;
 const CACHE_TTL_SECONDS = 900;
 const ARCHIVE_INDEX_KEY = "archive:index";
 const FALLBACK_TTL_SECONDS = 60;
@@ -224,26 +227,41 @@ async function staleFeed(kv: KVNamespace, archive: Archive, staleReason: StaleRe
     ),
     staleReason,
   };
-  await kv.put(CACHE_KEY, JSON.stringify(feed), { expirationTtl: FALLBACK_TTL_SECONDS });
+  await kv.put(STALE_CACHE_KEY, JSON.stringify(feed), { expirationTtl: FALLBACK_TTL_SECONDS });
   return feed;
+}
+
+async function readCache(kv: KVNamespace, key: string): Promise<FeedSnapshot | null> {
+  const cached = await kv.get(key);
+  return cached ? parseCachedSnapshot(JSON.parse(cached)) : null;
 }
 
 /** Refresh the archive at most once per cache period. Reads every month, because an edit can move a record out of an old one. */
 async function syncFeed(env: Env): Promise<{ feed: FeedSnapshot; archive?: Archive }> {
-  const cached = await env.OAUTH_KV.get(CACHE_KEY);
+  const cached = (await readCache(env.OAUTH_KV, CACHE_KEY)) ?? (await readCache(env.OAUTH_KV, STALE_CACHE_KEY));
   if (cached) {
-    return { feed: parseCachedSnapshot(JSON.parse(cached)) };
+    return { feed: cached };
   }
 
   const archive = await readArchive(env.OAUTH_KV);
   let live: FeedSnapshot;
   try {
     live = await fetchLiveFeed(env);
-  } catch (error) {
-    if (archive.records.length === 0) {
-      throw error;
+  } catch {
+    // Parallel requests can all find the cache expired and fetch at once. Wait, then use what another one cached.
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+    const synced = await readCache(env.OAUTH_KV, CACHE_KEY);
+    if (synced) {
+      return { feed: synced };
     }
-    return { feed: await staleFeed(env.OAUTH_KV, archive, "request_failed"), archive };
+    try {
+      live = await fetchLiveFeed(env);
+    } catch (error) {
+      if (archive.records.length === 0) {
+        throw error;
+      }
+      return { feed: await staleFeed(env.OAUTH_KV, archive, "request_failed"), archive };
+    }
   }
 
   // An empty feed would delete every stored record in the window. Treat it as a feed fault.
