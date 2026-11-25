@@ -1,4 +1,4 @@
-import { TIMEZONE, zonedParts } from "./feeding.ts";
+import { TIMEZONE, zonedParts } from "./time.ts";
 import { FEEDING_TYPES, TYPE_LABELS, type PiyoRecord } from "./types.ts";
 
 type Amount = NonNullable<PiyoRecord["value"]>;

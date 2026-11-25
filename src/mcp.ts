@@ -2,12 +2,12 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler, getMcpAuthContext } from "agents/mcp/server";
 import { z } from "zod";
 import { childName } from "./config";
-import { fetchDocument, searchDocuments } from "./docs";
-import { analysisBundle, buildDashboard, getDay, todayInZone } from "./feeding";
+import { dayDocument, recordDocument, searchDocuments } from "./docs";
 import { resolveDate } from "./date";
 import { FeedError, loadFeed, loadRange } from "./piyolog";
 import { queryRecords } from "./records";
 import { addDays, buildLatest, buildSummary, daysBetween, previousRange } from "./summary";
+import { todayInZone } from "./time";
 import type { FeedSnapshot } from "./types";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
@@ -15,9 +15,6 @@ const oauthSchemes = [{ type: "oauth2" as const, scopes: ["mcp:read"] }];
 const toolMeta = { securitySchemes: oauthSchemes };
 
 const emptyInput = z.object({});
-const dateInput = z.object({
-  date: z.string().optional().describe("JST date YYYY-MM-DD. Empty means today."),
-});
 const rangeInput = z.object({
   from: z.string().optional().describe("First JST date, YYYY-MM-DD. Empty means the same as to."),
   to: z.string().optional().describe("Last JST date, inclusive. Empty means today."),
@@ -35,7 +32,7 @@ const summaryInput = z.object({
   compare: z.boolean().optional().describe("Also return the previous period of the same length and the change."),
 });
 const searchInput = z.object({
-  query: z.string().describe("search query"),
+  query: z.string().describe("A word in a memo, a record label or type, or a JST date YYYY-MM-DD."),
 });
 const fetchInput = z.object({
   id: z.string().describe("document id from search"),
@@ -60,10 +57,6 @@ const feedOutput = z.object({
   stale: z.boolean(),
   generatedAt: z.string(),
   reason: z.enum(["request_failed", "empty_feed"]).optional(),
-});
-const recordsOutput = z.object({
-  feed: feedOutput,
-  data: z.unknown(),
 });
 // Amounts and memos come from the feed unvalidated, so only the fields set here are typed.
 const recordItem = z.looseObject({
@@ -207,31 +200,13 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
     const server = new McpServer(
       {
         name: "piyo-mcp",
-        version: "1.2.0",
+        version: "2.0.0",
         description: `${child}のぴよログ読み取り。授乳・睡眠・おむつの記録を取得、集計する。`,
       },
       {
         instructions:
           `${child}のぴよログ読み取り専用。今の状態は get_latest_status。個々の記録は get_records。合計・平均・傾向・比較は get_summary。メモや特定の記録を探すときは search のあと fetch。日付は日本時間。28日より前の記録も残してある。feed.stale が true なら最新ではない可能性を伝える。母乳mlは記録があるときだけ使い、授乳時間から推定しない。呼び出し前にOAuthが必要。`,
       },
-    );
-
-    server.registerTool(
-      "get_today_records",
-      {
-        title: "今日の全記録",
-        description:
-          `Use this when the user wants ${child}'s records for today in JST. Returns feeding, sleep, diaper, weight, and bath JSON. No arguments.`,
-        inputSchema: emptyInput,
-        outputSchema: recordsOutput,
-        annotations: readOnly,
-        _meta: toolMeta,
-      },
-      guarded(async () => {
-        const today = todayInZone();
-        const snapshot = await loadRange(env, today, today);
-        return recordsResult(snapshot, analysisBundle(snapshot, { date: today }));
-      }),
     );
 
     server.registerTool(
@@ -248,24 +223,6 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
       guarded(async () => {
         const snapshot = await loadFeed(env);
         return recordsResult(snapshot, buildLatest(snapshot.records));
-      }),
-    );
-
-    server.registerTool(
-      "get_feeding_records",
-      {
-        title: "授乳・食事記録",
-        description:
-          `Use this for ${child}'s feeding records (breast, formula, expressed milk, solids). date is JST YYYY-MM-DD; omit for today.`,
-        inputSchema: dateInput,
-        outputSchema: recordsOutput,
-        annotations: readOnly,
-        _meta: toolMeta,
-      },
-      guarded(async ({ date }) => {
-        const target = resolveDate(date, todayInZone());
-        const snapshot = await loadRange(env, target, target);
-        return recordsResult(snapshot, getDay(buildDashboard(snapshot), target));
       }),
     );
 
@@ -318,27 +275,10 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
     );
 
     server.registerTool(
-      "get_all_records",
-      {
-        title: "全期間の記録",
-        description:
-          `Returns every saved record, which can be very large. Prefer get_records or get_summary. No arguments.`,
-        inputSchema: emptyInput,
-        outputSchema: recordsOutput,
-        annotations: readOnly,
-        _meta: toolMeta,
-      },
-      guarded(async () => {
-        const snapshot = await loadFeed(env);
-        return recordsResult(snapshot, analysisBundle(snapshot));
-      }),
-    );
-
-    server.registerTool(
       "search",
       {
         title: "記録を検索",
-        description: `Search ${child}'s records and return ids. Follow with fetch. Use query all for the full analysis document.`,
+        description: `Search ${child}'s records by memo text, label, type or date, newest first. Returns up to 20 ids for fetch, and nothing when there is no match. To list records in a range use get_records.`,
         inputSchema: searchInput,
         outputSchema: searchOutput,
         annotations: readOnly,
@@ -346,7 +286,7 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
       },
       guarded(async ({ query }) => {
         const snapshot = await loadFeed(env);
-        return jsonResult({ results: searchDocuments(snapshot, origin, query, child) });
+        return jsonResult({ results: searchDocuments(snapshot, origin, query) });
       }),
     );
 
@@ -354,17 +294,19 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
       "fetch",
       {
         title: "記録を取得",
-        description: "Fetch a search result by id. Use all for the full JSON, latest for today.",
+        description: "Fetch one search result by id: record:<eventId> for a record, or day:YYYY-MM-DD for a day.",
         inputSchema: fetchInput,
         outputSchema: fetchOutput,
         annotations: readOnly,
         _meta: toolMeta,
       },
       guarded(async ({ id }) => {
-        const snapshot = await loadFeed(env);
-        const document = fetchDocument(snapshot, origin, id, child);
+        const date = /^day:(.+)$/.exec(id)?.[1];
+        const day = date ? resolveDate(date, todayInZone()) : null;
+        const snapshot = day ? await loadRange(env, day, day) : await loadFeed(env);
+        const document = day ? dayDocument(snapshot, origin, day) : recordDocument(snapshot, origin, id);
         if (!document) {
-          return { content: [{ type: "text", text: `id ${id} は見つかりませんでした` }], isError: true };
+          return { content: [{ type: "text" as const, text: `id ${id} は見つかりませんでした` }], isError: true };
         }
         const notice = staleNotice(snapshot);
         if (notice) {

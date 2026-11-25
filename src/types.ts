@@ -37,8 +37,6 @@ export const FEEDING_TYPES = [
   "Drink",
 ] as const;
 
-export type FeedingType = (typeof FEEDING_TYPES)[number];
-
 export const TYPE_LABELS: Record<string, string> = {
   BreastFeeding: "母乳",
   Formula: "ミルク",
@@ -66,67 +64,4 @@ export const TYPE_LABELS: Record<string, string> = {
   Milestone: "できた",
   Other: "その他",
   Memo: "メモ",
-};
-
-export type FeedingEvent = {
-  eventId: string;
-  datetime: string;
-  localDate: string;
-  localTime: string;
-  type: string;
-  label: string;
-  memo?: string;
-  volumeMl?: number;
-  leftSeconds?: number;
-  rightSeconds?: number;
-  lastSide?: "left" | "right";
-  summary: string;
-};
-
-export type DayFeeding = {
-  date: string;
-  formulaMl: number;
-  expressedMl: number;
-  breastMl: number;
-  pumpingMl: number;
-  drinkMl: number;
-  totalMilkMl: number;
-  breastSeconds: number;
-  breastCount: number;
-  formulaCount: number;
-  expressedCount: number;
-  pumpingCount: number;
-  solidCount: number;
-  snackCount: number;
-  mealCount: number;
-  drinkCount: number;
-  events: FeedingEvent[];
-};
-
-export type WeightPoint = {
-  date: string;
-  datetime: string;
-  kg: number;
-};
-
-export type MemoItem = {
-  eventId: string;
-  datetime: string;
-  localDate: string;
-  localTime: string;
-  type: string;
-  label: string;
-  memo: string;
-};
-
-export type DashboardPayload = {
-  timezone: string;
-  generatedAt: string;
-  range: { from: string; to: string };
-  today: string;
-  todayFeeding: DayFeeding;
-  days: DayFeeding[];
-  weights: WeightPoint[];
-  memos: MemoItem[];
-  lastFeeding: FeedingEvent | null;
 };
