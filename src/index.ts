@@ -24,6 +24,7 @@ const EXPECTED_TOOLS = [
   "get_latest_status",
   "get_feeding_records",
   "get_records",
+  "get_summary",
   "get_all_records",
   "search",
   "fetch",

@@ -3,10 +3,11 @@ import { createMcpHandler, getMcpAuthContext } from "agents/mcp/server";
 import { z } from "zod";
 import { childName } from "./config";
 import { fetchDocument, searchDocuments } from "./docs";
-import { analysisBundle, buildDashboard, formatLatestText, getDay, todayInZone } from "./feeding";
+import { analysisBundle, buildDashboard, getDay, todayInZone } from "./feeding";
 import { resolveDate } from "./date";
 import { FeedError, loadFeed, loadRange } from "./piyolog";
 import { queryRecords } from "./records";
+import { addDays, buildLatest, buildSummary, daysBetween, previousRange } from "./summary";
 import type { FeedSnapshot } from "./types";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
@@ -18,14 +19,20 @@ const dateInput = z.object({
   date: z.string().optional().describe("JST date YYYY-MM-DD. Empty means today."),
 });
 const rangeInput = z.object({
-  from: z.string().describe("First JST date, YYYY-MM-DD."),
+  from: z.string().optional().describe("First JST date, YYYY-MM-DD. Empty means the same as to."),
   to: z.string().optional().describe("Last JST date, inclusive. Empty means today."),
   types: z
     .array(z.string())
     .optional()
-    .describe("Record types to keep, e.g. BreastFeeding, Formula, Sleep, WakeUp, Pee, Poop, Weight, Temperature. Empty means all."),
+    .describe("Categories (feeding, sleep, diaper, measurement) or exact types such as Formula, Poop, Weight, Medicine. Empty means all."),
   offset: z.number().int().min(0).optional().describe("Pass nextOffset from the previous page."),
   limit: z.number().int().min(1).max(1000).optional().describe("Page size. Default 500."),
+});
+const summaryInput = z.object({
+  from: z.string().optional().describe("First JST date, YYYY-MM-DD. Empty means 6 days before to."),
+  to: z.string().optional().describe("Last JST date, inclusive. Empty means today."),
+  groupBy: z.enum(["day", "week"]).optional().describe("day (default, up to 92 days) or week (7-day blocks from the first date, up to 366 days)."),
+  compare: z.boolean().optional().describe("Also return the previous period of the same length and the change."),
 });
 const searchInput = z.object({
   query: z.string().describe("search query"),
@@ -49,13 +56,69 @@ const fetchOutput = z.object({
   url: z.string(),
   metadata: z.record(z.string(), z.string()).optional(),
 });
+const feedOutput = z.object({
+  stale: z.boolean(),
+  generatedAt: z.string(),
+  reason: z.enum(["request_failed", "empty_feed"]).optional(),
+});
 const recordsOutput = z.object({
-  feed: z.object({
-    stale: z.boolean(),
-    generatedAt: z.string(),
-    reason: z.enum(["request_failed", "empty_feed"]).optional(),
-  }),
+  feed: feedOutput,
   data: z.unknown(),
+});
+// Amounts and memos come from the feed unvalidated, so only the fields set here are typed.
+const recordItem = z.looseObject({
+  eventId: z.string(),
+  datetime: z.string(),
+  date: z.string(),
+  time: z.string(),
+  type: z.string(),
+  label: z.string(),
+  kind: z.string(),
+});
+const recordListOutput = z.object({
+  feed: feedOutput,
+  data: z.object({
+    timezone: z.string(),
+    from: z.string(),
+    to: z.string(),
+    typeCounts: z.record(z.string(), z.number()),
+    total: z.number(),
+    skippedCount: z.number(),
+    nextOffset: z.number().nullable(),
+    records: z.array(recordItem),
+  }),
+});
+const daySummary = z.looseObject({ date: z.string(), partial: z.boolean(), sleepMinutes: z.number().nullable() });
+const periodSummary = z.object({
+  from: z.string(),
+  to: z.string(),
+  dayCount: z.number(),
+  averagedDays: z.number(),
+  averages: z.record(z.string(), z.number().nullable()),
+});
+const summaryOutput = z.object({
+  feed: feedOutput,
+  data: z.object({
+    timezone: z.string(),
+    overall: periodSummary,
+    days: z.array(daySummary).optional(),
+    weeks: z.array(periodSummary).optional(),
+    previous: periodSummary.optional(),
+    change: z.record(z.string(), z.number().nullable()).optional(),
+    measurements: z.array(z.looseObject({ eventId: z.string(), date: z.string(), type: z.string() })),
+    notes: z.array(z.string()),
+  }),
+});
+const latestOutput = z.object({
+  feed: feedOutput,
+  data: z.object({
+    timezone: z.string(),
+    now: z.string(),
+    today: z.string(),
+    sleepingSince: z.string().nullable(),
+    latest: z.record(z.string(), recordItem.extend({ minutesAgo: z.number() }).nullable()),
+    todaySummary: daySummary.nullable(),
+  }),
 });
 
 function familyAuthed(ctx: ExecutionContext): boolean {
@@ -72,7 +135,7 @@ function jsonResult<T>(data: T): {
 } {
   return {
     structuredContent: data,
-    content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+    content: [{ type: "text", text: JSON.stringify(data) }],
   };
 }
 
@@ -84,7 +147,7 @@ function staleNotice(snapshot: FeedSnapshot): string | null {
   return `注意: ${cause}ため、${snapshot.generated_at} 時点の保存済み記録です。最新ではない可能性があります。`;
 }
 
-function recordsResult(snapshot: FeedSnapshot, data: unknown, text?: string) {
+function recordsResult(snapshot: FeedSnapshot, data: unknown) {
   const notice = staleNotice(snapshot);
   const result = {
     feed: {
@@ -96,7 +159,7 @@ function recordsResult(snapshot: FeedSnapshot, data: unknown, text?: string) {
   };
   return {
     structuredContent: result,
-    content: [notice, text, JSON.stringify(result, null, 2)]
+    content: [notice, JSON.stringify(result)]
       .filter((item): item is string => typeof item === "string")
       .map((item) => ({ type: "text" as const, text: item })),
   };
@@ -127,16 +190,29 @@ function authRequired(origin: string) {
 export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const origin = new URL(request.url).origin;
   const child = childName(env);
+  /** Every tool goes through this, so none can return records without a token. */
+  const guarded =
+    <A, R>(run: (args: A) => Promise<R>) =>
+    async (args: A) => {
+      if (!familyAuthed(ctx)) {
+        return authRequired(origin);
+      }
+      try {
+        return await run(args);
+      } catch (error) {
+        return errorResult(error);
+      }
+    };
   const handler = createMcpHandler(() => {
     const server = new McpServer(
       {
         name: "piyo-mcp",
         version: "1.2.0",
-        description: `${child}のぴよログ読み取り。授乳・睡眠・おむつの記録を ChatGPT が直接分析する。`,
+        description: `${child}のぴよログ読み取り。授乳・睡眠・おむつの記録を取得、集計する。`,
       },
       {
         instructions:
-          `${child}のぴよログ読み取り専用。フィードは直近28日だが、それより前の記録はこちらに残してある。期間や種別を絞る分析は get_records、全件が必要なときだけ get_all_records。今日は get_today_records。最新は get_latest_status。日付指定の食事は get_feeding_records。search/fetch は記録の検索用。feed.stale が true なら最新ではない可能性を伝える。母乳mlは記録があるときだけ使い、授乳時間から推定しない。呼び出し前にOAuthが必要。`,
+          `${child}のぴよログ読み取り専用。今の状態は get_latest_status。個々の記録は get_records。合計・平均・傾向・比較は get_summary。メモや特定の記録を探すときは search のあと fetch。日付は日本時間。28日より前の記録も残してある。feed.stale が true なら最新ではない可能性を伝える。母乳mlは記録があるときだけ使い、授乳時間から推定しない。呼び出し前にOAuthが必要。`,
       },
     );
 
@@ -151,18 +227,11 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
         annotations: readOnly,
         _meta: toolMeta,
       },
-      async () => {
-        if (!familyAuthed(ctx)) {
-          return authRequired(origin);
-        }
-        try {
-          const today = todayInZone();
-          const snapshot = await loadRange(env, today, today);
-          return recordsResult(snapshot, analysisBundle(snapshot, { date: today }));
-        } catch (error) {
-          return errorResult(error);
-        }
-      },
+      guarded(async () => {
+        const today = todayInZone();
+        const snapshot = await loadRange(env, today, today);
+        return recordsResult(snapshot, analysisBundle(snapshot, { date: today }));
+      }),
     );
 
     server.registerTool(
@@ -170,28 +239,16 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
       {
         title: "最新ステータス",
         description:
-          `Use this for ${child}'s latest status: last feeding, today's formula ml, breast time, sleep, diaper, and weight. No arguments.`,
+          `Use this for ${child}'s current state: the latest record of each kind with minutesAgo, whether ${child} is asleep, and today's totals so far. For a list of records use get_records. No arguments.`,
         inputSchema: emptyInput,
-        outputSchema: recordsOutput,
+        outputSchema: latestOutput,
         annotations: readOnly,
         _meta: toolMeta,
       },
-      async () => {
-        if (!familyAuthed(ctx)) {
-          return authRequired(origin);
-        }
-        try {
-          const snapshot = await loadFeed(env);
-          const dashboard = buildDashboard(snapshot);
-          return recordsResult(
-            snapshot,
-            analysisBundle(snapshot, { date: dashboard.today }),
-            formatLatestText(snapshot, dashboard, child),
-          );
-        } catch (error) {
-          return errorResult(error);
-        }
-      },
+      guarded(async () => {
+        const snapshot = await loadFeed(env);
+        return recordsResult(snapshot, buildLatest(snapshot.records));
+      }),
     );
 
     server.registerTool(
@@ -205,18 +262,11 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
         annotations: readOnly,
         _meta: toolMeta,
       },
-      async ({ date }) => {
-        if (!familyAuthed(ctx)) {
-          return authRequired(origin);
-        }
-        try {
-          const target = resolveDate(date, todayInZone());
-          const snapshot = await loadRange(env, target, target);
-          return recordsResult(snapshot, getDay(buildDashboard(snapshot), target));
-        } catch (error) {
-          return errorResult(error);
-        }
-      },
+      guarded(async ({ date }) => {
+        const target = resolveDate(date, todayInZone());
+        const snapshot = await loadRange(env, target, target);
+        return recordsResult(snapshot, getDay(buildDashboard(snapshot), target));
+      }),
     );
 
     server.registerTool(
@@ -224,32 +274,47 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
       {
         title: "期間の記録",
         description:
-          `Use this for ${child}'s records over a date range, optionally by type. Prefer it over get_all_records. If nextOffset is not null, call again with it.`,
+          `Use this for ${child}'s individual records on a date or over a range, optionally by category or type. No arguments means today. For totals, averages, trends or comparisons use get_summary. If nextOffset is not null, call again with it.`,
         inputSchema: rangeInput,
-        outputSchema: recordsOutput,
+        outputSchema: recordListOutput,
         annotations: readOnly,
         _meta: toolMeta,
       },
-      async ({ from, to, types, offset, limit }) => {
-        if (!familyAuthed(ctx)) {
-          return authRequired(origin);
+      guarded(async ({ from, to, types, offset, limit }) => {
+        const end = resolveDate(to, todayInZone());
+        const start = resolveDate(from, end);
+        if (start > end) {
+          throw new Error("from は to 以前の日付にしてください");
         }
-        try {
-          const today = todayInZone();
-          if (!from.trim()) {
-            throw new Error("from を YYYY-MM-DD で指定してください");
-          }
-          const start = resolveDate(from, today);
-          const end = resolveDate(to, today);
-          if (start > end) {
-            throw new Error("from は to 以前の日付にしてください");
-          }
-          const snapshot = await loadRange(env, start, end);
-          return recordsResult(snapshot, queryRecords(snapshot.records, { from: start, to: end, types, offset, limit }));
-        } catch (error) {
-          return errorResult(error);
-        }
+        const snapshot = await loadRange(env, start, end);
+        return recordsResult(snapshot, queryRecords(snapshot.records, { from: start, to: end, types, offset, limit }));
+      }),
+    );
+
+    server.registerTool(
+      "get_summary",
+      {
+        title: "集計と比較",
+        description:
+          `Use this for ${child}'s totals, averages, trends and comparisons: feeding, feeding intervals, sleep, diapers, and measurements such as weight. Defaults to the last 7 days. For individual records use get_records.`,
+        inputSchema: summaryInput,
+        outputSchema: summaryOutput,
+        annotations: readOnly,
+        _meta: toolMeta,
       },
+      guarded(async ({ from, to, groupBy = "day", compare = false }) => {
+        const end = resolveDate(to, todayInZone());
+        const start = resolveDate(from, addDays(end, -6));
+        if (start > end) {
+          throw new Error("from は to 以前の日付にしてください");
+        }
+        const maxDays = groupBy === "week" ? 366 : 92;
+        if (daysBetween(start, end) > maxDays) {
+          throw new Error(`groupBy が ${groupBy} のときは ${maxDays} 日以内で指定してください`);
+        }
+        const snapshot = await loadRange(env, compare ? previousRange(start, end).from : start, end);
+        return recordsResult(snapshot, buildSummary(snapshot.records, { from: start, to: end, groupBy, compare }));
+      }),
     );
 
     server.registerTool(
@@ -257,23 +322,16 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
       {
         title: "全期間の記録",
         description:
-          `Use this when ChatGPT should analyze ${child}'s stored history itself. Returns every saved record, including days older than the 28-day feed. No arguments.`,
+          `Returns every saved record, which can be very large. Prefer get_records or get_summary. No arguments.`,
         inputSchema: emptyInput,
         outputSchema: recordsOutput,
         annotations: readOnly,
         _meta: toolMeta,
       },
-      async () => {
-        if (!familyAuthed(ctx)) {
-          return authRequired(origin);
-        }
-        try {
-          const snapshot = await loadFeed(env);
-          return recordsResult(snapshot, analysisBundle(snapshot));
-        } catch (error) {
-          return errorResult(error);
-        }
-      },
+      guarded(async () => {
+        const snapshot = await loadFeed(env);
+        return recordsResult(snapshot, analysisBundle(snapshot));
+      }),
     );
 
     server.registerTool(
@@ -286,17 +344,10 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
         annotations: readOnly,
         _meta: toolMeta,
       },
-      async ({ query }) => {
-        if (!familyAuthed(ctx)) {
-          return authRequired(origin);
-        }
-        try {
-          const snapshot = await loadFeed(env);
-          return jsonResult({ results: searchDocuments(snapshot, origin, query, child) });
-        } catch (error) {
-          return errorResult(error);
-        }
-      },
+      guarded(async ({ query }) => {
+        const snapshot = await loadFeed(env);
+        return jsonResult({ results: searchDocuments(snapshot, origin, query, child) });
+      }),
     );
 
     server.registerTool(
@@ -309,29 +360,22 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
         annotations: readOnly,
         _meta: toolMeta,
       },
-      async ({ id }) => {
-        if (!familyAuthed(ctx)) {
-          return authRequired(origin);
+      guarded(async ({ id }) => {
+        const snapshot = await loadFeed(env);
+        const document = fetchDocument(snapshot, origin, id, child);
+        if (!document) {
+          return { content: [{ type: "text", text: `id ${id} は見つかりませんでした` }], isError: true };
         }
-        try {
-          const snapshot = await loadFeed(env);
-          const document = fetchDocument(snapshot, origin, id, child);
-          if (!document) {
-            return { content: [{ type: "text", text: `id ${id} は見つかりませんでした` }], isError: true };
-          }
-          const notice = staleNotice(snapshot);
-          if (notice) {
-            return jsonResult({
-              ...document,
-              text: `${notice}\n\n${document.text}`,
-              metadata: { ...document.metadata, stale: "true" },
-            });
-          }
-          return jsonResult(document);
-        } catch (error) {
-          return errorResult(error);
+        const notice = staleNotice(snapshot);
+        if (notice) {
+          return jsonResult({
+            ...document,
+            text: `${notice}\n\n${document.text}`,
+            metadata: { ...document.metadata, stale: "true" },
+          });
         }
-      },
+        return jsonResult(document);
+      }),
     );
 
     return server;
