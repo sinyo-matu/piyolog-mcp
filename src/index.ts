@@ -22,6 +22,7 @@ const EXPECTED_TOOLS = [
   "get_today_records",
   "get_latest_status",
   "get_feeding_records",
+  "get_records",
   "get_all_records",
   "search",
   "fetch",

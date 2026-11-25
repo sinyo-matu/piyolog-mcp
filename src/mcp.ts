@@ -3,9 +3,10 @@ import { createMcpHandler, getMcpAuthContext } from "agents/mcp/server";
 import { z } from "zod";
 import { childName } from "./config";
 import { fetchDocument, searchDocuments } from "./docs";
-import { analysisBundle, buildDashboard, formatLatestText, getDay } from "./feeding";
+import { analysisBundle, buildDashboard, formatLatestText, getDay, todayInZone } from "./feeding";
 import { resolveDate } from "./date";
-import { FeedError, loadFeed } from "./piyolog";
+import { FeedError, loadFeed, loadRange } from "./piyolog";
+import { queryRecords } from "./records";
 import type { FeedSnapshot } from "./types";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
@@ -15,6 +16,16 @@ const toolMeta = { securitySchemes: oauthSchemes };
 const emptyInput = z.object({});
 const dateInput = z.object({
   date: z.string().optional().describe("JST date YYYY-MM-DD. Empty means today."),
+});
+const rangeInput = z.object({
+  from: z.string().describe("First JST date, YYYY-MM-DD."),
+  to: z.string().optional().describe("Last JST date, inclusive. Empty means today."),
+  types: z
+    .array(z.string())
+    .optional()
+    .describe("Record types to keep, e.g. BreastFeeding, Formula, Sleep, WakeUp, Pee, Poop, Weight, Temperature. Empty means all."),
+  offset: z.number().int().min(0).optional().describe("Pass nextOffset from the previous page."),
+  limit: z.number().int().min(1).max(1000).optional().describe("Page size. Default 500."),
 });
 const searchInput = z.object({
   query: z.string().describe("search query"),
@@ -125,7 +136,7 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
       },
       {
         instructions:
-          `${child}のぴよログ読み取り専用。フィードは直近28日だが、それより前の記録はこちらに残してある。分析は get_all_records。今日は get_today_records。最新は get_latest_status。日付指定の食事は get_feeding_records。search/fetch は記録の検索用。feed.stale が true なら最新ではない可能性を伝える。母乳mlは記録があるときだけ使い、授乳時間から推定しない。呼び出し前にOAuthが必要。`,
+          `${child}のぴよログ読み取り専用。フィードは直近28日だが、それより前の記録はこちらに残してある。期間や種別を絞る分析は get_records、全件が必要なときだけ get_all_records。今日は get_today_records。最新は get_latest_status。日付指定の食事は get_feeding_records。search/fetch は記録の検索用。feed.stale が true なら最新ではない可能性を伝える。母乳mlは記録があるときだけ使い、授乳時間から推定しない。呼び出し前にOAuthが必要。`,
       },
     );
 
@@ -145,9 +156,9 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
           return authRequired(origin);
         }
         try {
-          const snapshot = await loadFeed(env);
-          const dashboard = buildDashboard(snapshot);
-          return recordsResult(snapshot, analysisBundle(snapshot, { date: dashboard.today }));
+          const today = todayInZone();
+          const snapshot = await loadRange(env, today, today);
+          return recordsResult(snapshot, analysisBundle(snapshot, { date: today }));
         } catch (error) {
           return errorResult(error);
         }
@@ -199,10 +210,42 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
           return authRequired(origin);
         }
         try {
-          const snapshot = await loadFeed(env);
-          const dashboard = buildDashboard(snapshot);
-          const target = resolveDate(date, dashboard.today);
-          return recordsResult(snapshot, getDay(dashboard, target));
+          const target = resolveDate(date, todayInZone());
+          const snapshot = await loadRange(env, target, target);
+          return recordsResult(snapshot, getDay(buildDashboard(snapshot), target));
+        } catch (error) {
+          return errorResult(error);
+        }
+      },
+    );
+
+    server.registerTool(
+      "get_records",
+      {
+        title: "期間の記録",
+        description:
+          `Use this for ${child}'s records over a date range, optionally by type. Prefer it over get_all_records. If nextOffset is not null, call again with it.`,
+        inputSchema: rangeInput,
+        outputSchema: recordsOutput,
+        annotations: readOnly,
+        _meta: toolMeta,
+      },
+      async ({ from, to, types, offset, limit }) => {
+        if (!familyAuthed(ctx)) {
+          return authRequired(origin);
+        }
+        try {
+          const today = todayInZone();
+          if (!from.trim()) {
+            throw new Error("from を YYYY-MM-DD で指定してください");
+          }
+          const start = resolveDate(from, today);
+          const end = resolveDate(to, today);
+          if (start > end) {
+            throw new Error("from は to 以前の日付にしてください");
+          }
+          const snapshot = await loadRange(env, start, end);
+          return recordsResult(snapshot, queryRecords(snapshot.records, { from: start, to: end, types, offset, limit }));
         } catch (error) {
           return errorResult(error);
         }

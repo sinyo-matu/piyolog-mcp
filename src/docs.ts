@@ -199,7 +199,8 @@ export function fetchDocument(snapshot: FeedSnapshot, origin: string, id: string
     });
   }
   if (id === "memos") {
-    return document(id, "メモ一覧", `${formatMemosText(dashboard.memos)}\n\n${JSON.stringify(dashboard.memos)}`, {
+    const memos = dashboard.memos.slice(0, 30);
+    return document(id, "メモ一覧", `${formatMemosText(memos)}\n\n${JSON.stringify(memos)}`, {
       kind: "memos",
       wraps: "search_memos",
     });

@@ -8,7 +8,7 @@ import {
   type MemoItem,
   type PiyoRecord,
   type WeightPoint,
-} from "./types";
+} from "./types.ts";
 
 export const TIMEZONE = "Asia/Tokyo";
 
@@ -226,7 +226,7 @@ export function buildDashboard(snapshot: FeedSnapshot, timeZone = TIMEZONE, now 
     todayFeeding,
     days: dayList,
     weights,
-    memos: memos.slice(-30).reverse(),
+    memos: memos.reverse(),
     lastFeeding,
   };
 }
