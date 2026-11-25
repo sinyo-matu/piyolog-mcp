@@ -233,9 +233,51 @@ describe("feed archive updates", () => {
     const snapshot = await loadFeed(envFor(kv));
 
     assert.deepEqual(snapshot.records, [stored]);
+    assert.equal(snapshot.staleReason, "request_failed");
+    assert.equal((await loadFeed(envFor(kv))).staleReason, "request_failed");
     assert.deepEqual(kv.puts, ["cache:piyolog-history"]);
     assert.equal(kv.ttl.get("cache:piyolog-history"), 60);
     assert.deepEqual(monthRecords(kv, "2026-09"), [stored]);
+  });
+
+  it("keeps the stored records when the feed is empty inside the window", async () => {
+    const kv = new MemoryKv();
+    const stored = record("stored", "2026-09-20T00:00:00.000Z");
+    stubFeed(200, feed("2026-08-27T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [stored]));
+    await loadFeed(envFor(kv));
+    kv.values.delete("cache:piyolog-history");
+    kv.puts = [];
+    stubFeed(200, feed("2026-08-28T00:00:00.000Z", "2026-09-25T03:00:00.000Z", []));
+
+    const snapshot = await loadFeed(envFor(kv));
+
+    assert.deepEqual(snapshot.records, [stored]);
+    assert.equal(snapshot.staleReason, "empty_feed");
+    assert.equal(snapshot.generated_at, "2026-09-24T03:00:00.000Z");
+    assert.deepEqual(monthRecords(kv, "2026-09"), [stored]);
+    assert.deepEqual(kv.puts, ["cache:piyolog-history"]);
+    assert.equal(kv.ttl.get("cache:piyolog-history"), 60);
+  });
+
+  it("reports the last successful fetch and clears the stale mark on recovery", async () => {
+    const kv = new MemoryKv();
+    const stored = record("stored", "2026-09-20T00:00:00.000Z");
+    stubFeed(200, feed("2026-08-27T00:00:00.000Z", "2026-09-24T03:00:00.000Z", [stored]));
+    await loadFeed(envFor(kv));
+    kv.values.delete("cache:piyolog-history");
+    stubFeed(200, feed("2026-08-28T00:00:00.000Z", "2026-09-25T03:00:00.000Z", [stored]));
+    await loadFeed(envFor(kv));
+    kv.values.delete("cache:piyolog-history");
+    stubFeed(500, {});
+
+    const stale = await loadFeed(envFor(kv));
+    kv.values.delete("cache:piyolog-history");
+    stubFeed(200, feed("2026-08-29T00:00:00.000Z", "2026-09-26T03:00:00.000Z", [stored]));
+    const fresh = await loadFeed(envFor(kv));
+
+    assert.equal(stale.generated_at, "2026-09-25T03:00:00.000Z");
+    assert.equal(stale.staleReason, "request_failed");
+    assert.equal(fresh.staleReason, undefined);
   });
 
   it("throws when the feed request fails and the archive is empty", async () => {

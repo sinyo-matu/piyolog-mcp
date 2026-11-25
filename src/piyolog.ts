@@ -1,4 +1,4 @@
-import type { FeedSnapshot, PiyoRecord } from "./types";
+import type { FeedSnapshot, PiyoRecord, StaleReason } from "./types";
 
 const CACHE_KEY = "cache:piyolog-history";
 const CACHE_TTL_SECONDS = 900;
@@ -12,13 +12,14 @@ type ArchiveIndex = {
 };
 
 export class FeedError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: string,
-  ) {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.name = "FeedError";
+    this.status = status;
+    this.code = code;
   }
 }
 
@@ -45,6 +46,15 @@ function parseSnapshot(data: unknown): FeedSnapshot {
     },
     records: data.records as PiyoRecord[],
   };
+}
+
+function parseCachedSnapshot(data: unknown): FeedSnapshot {
+  const snapshot = parseSnapshot(data);
+  const reason = isRecord(data) ? data.staleReason : undefined;
+  if (reason === "request_failed" || reason === "empty_feed") {
+    snapshot.staleReason = reason;
+  }
+  return snapshot;
 }
 
 function monthOf(datetime: string): string {
@@ -132,7 +142,13 @@ async function readArchive(kv: KVNamespace): Promise<{ index: ArchiveIndex; reco
   return { index, records };
 }
 
-async function persistArchive(kv: KVNamespace, previous: PiyoRecord[], next: PiyoRecord[], feed: FeedSnapshot): Promise<void> {
+async function persistArchive(
+  kv: KVNamespace,
+  previousIndex: ArchiveIndex,
+  previous: PiyoRecord[],
+  next: PiyoRecord[],
+  feed: FeedSnapshot,
+): Promise<void> {
   const before = groupByMonth(sortRecords(previous));
   const after = groupByMonth(sortRecords(next));
   for (const list of before.values()) {
@@ -162,6 +178,7 @@ async function persistArchive(kv: KVNamespace, previous: PiyoRecord[], next: Piy
     rangeTo: feed.range.to,
   };
   const indexSame =
+    previousIndex.generatedAt === feed.generated_at &&
     JSON.stringify(nextMonths) === JSON.stringify([...before.keys()].sort()) &&
     puts.length === 0 &&
     removed.length === 0;
@@ -198,10 +215,28 @@ async function fetchLiveFeed(env: Env): Promise<FeedSnapshot> {
   return parseSnapshot(await response.json());
 }
 
+async function staleSnapshot(
+  kv: KVNamespace,
+  archive: { index: ArchiveIndex; records: PiyoRecord[] },
+  staleReason: StaleReason,
+): Promise<FeedSnapshot> {
+  const snapshot = {
+    ...snapshotFrom(
+      archive.records,
+      archive.index.generatedAt || new Date().toISOString(),
+      archive.index.rangeTo || archive.records.at(-1)?.datetime || new Date().toISOString(),
+      archive.records[0]?.datetime ?? new Date().toISOString(),
+    ),
+    staleReason,
+  };
+  await kv.put(CACHE_KEY, JSON.stringify(snapshot), { expirationTtl: FALLBACK_TTL_SECONDS });
+  return snapshot;
+}
+
 export async function loadFeed(env: Env): Promise<FeedSnapshot> {
   const cached = await env.OAUTH_KV.get(CACHE_KEY);
   if (cached) {
-    return parseSnapshot(JSON.parse(cached));
+    return parseCachedSnapshot(JSON.parse(cached));
   }
 
   const archive = await readArchive(env.OAUTH_KV);
@@ -212,18 +247,16 @@ export async function loadFeed(env: Env): Promise<FeedSnapshot> {
     if (archive.records.length === 0) {
       throw error;
     }
-    const snapshot = snapshotFrom(
-      archive.records,
-      archive.index.generatedAt || new Date().toISOString(),
-      archive.index.rangeTo || archive.records.at(-1)?.datetime || new Date().toISOString(),
-      archive.records[0]?.datetime ?? new Date().toISOString(),
-    );
-    await env.OAUTH_KV.put(CACHE_KEY, JSON.stringify(snapshot), { expirationTtl: FALLBACK_TTL_SECONDS });
-    return snapshot;
+    return staleSnapshot(env.OAUTH_KV, archive, "request_failed");
+  }
+
+  // An empty feed would delete every stored record in the window. Treat it as a feed fault.
+  if (live.records.length === 0 && archive.records.some((record) => record.datetime >= live.range.from)) {
+    return staleSnapshot(env.OAUTH_KV, archive, "empty_feed");
   }
 
   const records = mergeFeedArchive(archive.records, live);
-  await persistArchive(env.OAUTH_KV, archive.records, records, live);
+  await persistArchive(env.OAUTH_KV, archive.index, archive.records, records, live);
   const snapshot = snapshotFrom(records, live.generated_at, live.range.to, live.range.from);
   await env.OAUTH_KV.put(CACHE_KEY, JSON.stringify(snapshot), { expirationTtl: CACHE_TTL_SECONDS });
   return snapshot;
