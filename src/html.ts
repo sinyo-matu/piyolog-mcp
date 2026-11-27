@@ -234,7 +234,7 @@ export function toolsCheckPage(report: ChatgptScanReport): Response {
   <main>
     <h1>ChatGPT が見るツール一覧</h1>
     <p>ChatGPT の Actions Refresh と同じく、<code>Accept: application/json</code> だけで <code>/mcp</code> の <code>initialize</code> と <code>tools/list</code> を叩いた結果です。記録データは出していません。</p>
-    <div class="status">${pass ? "公開できています（6件）" : "公開チェックに失敗しています"}</div>
+    <div class="status">${pass ? `公開できています（${report.expected.length}件）` : "公開チェックに失敗しています"}</div>
     <p class="meta">確認時刻 ${escapeHtml(report.checkedAt)} / ${escapeHtml(report.endpoint)}</p>
     <p class="meta">initialize HTTP ${report.initialize.httpStatus}${report.initialize.serverName ? ` / ${escapeHtml(report.initialize.serverName)} ${escapeHtml(report.initialize.version ?? "")}` : ""}</p>
     <p class="meta">tools/list HTTP ${report.toolsList.httpStatus} / 検出 ${report.toolsList.names.length}件${missing.length ? ` / 不足 ${escapeHtml(missing.join(", "))}` : ""}${extra.length ? ` / 追加 ${escapeHtml(extra.join(", "))}` : ""}</p>

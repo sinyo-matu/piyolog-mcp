@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { resolveDate } from "./date.ts";
+import { resolveDate, resolveRange } from "./date.ts";
 
 const TODAY = "2026-11-25";
 
@@ -21,4 +21,22 @@ describe("resolveDate", () => {
       assert.throws(() => resolveDate(date, TODAY), /YYYY-MM-DD/);
     });
   }
+});
+
+describe("resolveRange", () => {
+  it("defaults to today only", () => {
+    assert.deepEqual(resolveRange(undefined, undefined, TODAY), { start: TODAY, end: TODAY });
+  });
+
+  it("defaults from to a span ending at to", () => {
+    assert.deepEqual(resolveRange(undefined, "2026-11-10", TODAY, 7), { start: "2026-11-04", end: "2026-11-10" });
+  });
+
+  it("keeps explicit dates", () => {
+    assert.deepEqual(resolveRange("2026-11-01", "2026-11-03", TODAY, 7), { start: "2026-11-01", end: "2026-11-03" });
+  });
+
+  it("rejects from after to", () => {
+    assert.throws(() => resolveRange("2026-11-05", "2026-11-04", TODAY), /from は to 以前/);
+  });
 });

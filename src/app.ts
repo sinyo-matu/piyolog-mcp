@@ -14,6 +14,7 @@ import {
 } from "./crypto.ts";
 import { GOOGLE_CALLBACK_PATH, googleAuthUrl, googleLoginEnabled, verifyGoogleCode } from "./google.ts";
 import { authorizePage, authorizeRedirectPage, homePage } from "./html.ts";
+import { MCP_SCOPE } from "./protocol.ts";
 
 type AppEnv = Env & { OAUTH_PROVIDER: OAuthHelpers };
 
@@ -106,7 +107,7 @@ async function completeFamilyAuthorization(
   label: string,
 ): Promise<Response | null> {
   // スコープ指定がなければ読み取り専用の mcp:read を付与する。
-  const scope = oauthRequest.scope.length > 0 ? oauthRequest.scope : ["mcp:read"];
+  const scope = oauthRequest.scope.length > 0 ? oauthRequest.scope : [MCP_SCOPE];
   let redirectTo: string;
   try {
     ({ redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
