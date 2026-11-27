@@ -4,6 +4,7 @@ import { authTtlSeconds } from "./config.ts";
 import { toolsCheckPage } from "./html.ts";
 import { handleMcp } from "./mcp.ts";
 import { syncArchive } from "./piyolog.ts";
+import { MCP_CORS_ALLOW_HEADERS, MCP_OAUTH_SCHEMES, MCP_SCOPE } from "./protocol.ts";
 import { scanAsChatgpt } from "./selfcheck.ts";
 
 const DISCOVERY_METHODS = new Set([
@@ -19,7 +20,6 @@ const DISCOVERY_METHODS = new Set([
   "skills/get",
 ]);
 
-const OAUTH_SCHEMES = [{ type: "oauth2", scopes: ["mcp:read"] }];
 /**
  * OAuth 2.1 プロバイダーを組み立てる。
  * /mcp はアクセストークン必須の API として保護し、それ以外 (/authorize など) は Hono アプリに渡す。
@@ -41,11 +41,11 @@ function oauthProvider(env: Env) {
     accessTokenTTL: ttl,
     refreshTokenTTL: ttl,
     clientRegistrationTTL: ttl,
-    scopesSupported: ["mcp:read"],
+    scopesSupported: [MCP_SCOPE],
     // DCR を使わず、URL 形式の client_id (Client ID Metadata Document) で来るクライアントも受け付ける。
     clientIdMetadataDocumentEnabled: true,
     resourceMetadata: {
-      scopes_supported: ["mcp:read"],
+      scopes_supported: [MCP_SCOPE],
       bearer_methods_supported: ["header"],
       resource_name: "ぴよログ MCP",
     },
@@ -56,10 +56,7 @@ function corsHeaders(request: Request): Headers {
   const headers = new Headers();
   headers.set("Access-Control-Allow-Origin", request.headers.get("Origin") ?? "*");
   headers.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  headers.set(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Accept, Authorization, mcp-session-id, mcp-protocol-version, Last-Event-ID",
-  );
+  headers.set("Access-Control-Allow-Headers", MCP_CORS_ALLOW_HEADERS);
   headers.set("Access-Control-Expose-Headers", "mcp-session-id, WWW-Authenticate");
   headers.set("Access-Control-Max-Age", "86400");
   headers.set("Vary", "Origin");
@@ -135,12 +132,12 @@ async function annotateToolSecurity(response: Response): Promise<Response> {
       continue;
     }
     const record = tool as Record<string, unknown>;
-    record.securitySchemes = OAUTH_SCHEMES;
+    record.securitySchemes = MCP_OAUTH_SCHEMES;
     const meta =
       record._meta && typeof record._meta === "object" && !Array.isArray(record._meta)
         ? { ...(record._meta as Record<string, unknown>) }
         : {};
-    meta.securitySchemes = OAUTH_SCHEMES;
+    meta.securitySchemes = MCP_OAUTH_SCHEMES;
     record._meta = meta;
   }
   const headers = new Headers(response.headers);

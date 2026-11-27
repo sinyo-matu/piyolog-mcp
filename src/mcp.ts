@@ -3,16 +3,16 @@ import { createMcpHandler, getMcpAuthContext } from "agents/mcp/server";
 import { z } from "zod";
 import { childName } from "./config.ts";
 import { dayDocument, recordDocument, searchDocuments } from "./docs.ts";
-import { addDays, daysBetween, resolveDate } from "./date.ts";
+import { daysBetween, resolveDate, resolveRange } from "./date.ts";
 import { FeedError, loadFeed, loadRange } from "./piyolog.ts";
+import { MCP_CORS_ALLOW_HEADERS, MCP_OAUTH_SCHEMES } from "./protocol.ts";
 import { queryRecords } from "./records.ts";
 import { buildLatest, buildSummary, previousRange } from "./summary.ts";
 import { todayInZone } from "./time.ts";
 import type { FeedSnapshot } from "./types.ts";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
-const oauthSchemes = [{ type: "oauth2" as const, scopes: ["mcp:read"] }];
-const toolMeta = { securitySchemes: oauthSchemes };
+const toolMeta = { securitySchemes: MCP_OAUTH_SCHEMES };
 
 const emptyInput = z.object({});
 const rangeInput = z.object({
@@ -238,11 +238,7 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
         _meta: toolMeta,
       },
       guarded(async ({ from, to, types, offset, limit }) => {
-        const end = resolveDate(to, todayInZone());
-        const start = resolveDate(from, end);
-        if (start > end) {
-          throw new Error("from は to 以前の日付にしてください");
-        }
+        const { start, end } = resolveRange(from, to, todayInZone());
         const snapshot = await loadRange(env, start, end);
         return recordsResult(snapshot, queryRecords(snapshot.records, { from: start, to: end, types, offset, limit }));
       }),
@@ -260,11 +256,7 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
         _meta: toolMeta,
       },
       guarded(async ({ from, to, groupBy = "day", compare = false }) => {
-        const end = resolveDate(to, todayInZone());
-        const start = resolveDate(from, addDays(end, -6));
-        if (start > end) {
-          throw new Error("from は to 以前の日付にしてください");
-        }
+        const { start, end } = resolveRange(from, to, todayInZone(), 7);
         const maxDays = groupBy === "week" ? 366 : 92;
         if (daysBetween(start, end) > maxDays) {
           throw new Error(`groupBy が ${groupBy} のときは ${maxDays} 日以内で指定してください`);
@@ -325,7 +317,7 @@ export function handleMcp(request: Request, env: Env, ctx: ExecutionContext): Pr
     responseMode: "json",
     corsOptions: {
       origin: "*",
-      headers: "Content-Type, Accept, Authorization, mcp-session-id, mcp-protocol-version, Last-Event-ID",
+      headers: MCP_CORS_ALLOW_HEADERS,
     },
     allowedOriginHostnames: "*",
   });

@@ -1,3 +1,4 @@
+import { DAY_MS } from "./date.ts";
 import type { FeedSnapshot, PiyoRecord, StaleReason } from "./types.ts";
 
 const CACHE_KEY = "cache:piyolog-feed";
@@ -308,8 +309,6 @@ export async function syncArchive(env: Env): Promise<void> {
     throw new FeedError("Scheduled feed sync failed", 502, feed.staleReason);
   }
 }
-
-const DAY_MS = 86_400_000;
 
 /**
  * Records covering the local dates from..to, reading only the months they need.

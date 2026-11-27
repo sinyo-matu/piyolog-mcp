@@ -1,4 +1,5 @@
-const DAY_MS = 86_400_000;
+export const MINUTE_MS = 60_000;
+export const DAY_MS = 86_400_000;
 
 /** Empty means today. Anything else must be a real YYYY-MM-DD date. */
 export function resolveDate(date: string | undefined, today: string): string {
@@ -13,6 +14,24 @@ export function resolveDate(date: string | undefined, today: string): string {
     }
   }
   throw new Error("date は実在する日付を YYYY-MM-DD で指定してください");
+}
+
+/**
+ * Resolves an inclusive from..to range. Empty to means today; empty from means
+ * defaultDays days ending at to (1 = just that day).
+ */
+export function resolveRange(
+  from: string | undefined,
+  to: string | undefined,
+  today: string,
+  defaultDays = 1,
+): { start: string; end: string } {
+  const end = resolveDate(to, today);
+  const start = resolveDate(from, addDays(end, 1 - defaultDays));
+  if (start > end) {
+    throw new Error("from は to 以前の日付にしてください");
+  }
+  return { start, end };
 }
 
 export function addDays(date: string, days: number): string {

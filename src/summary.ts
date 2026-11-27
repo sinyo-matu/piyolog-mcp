@@ -1,10 +1,8 @@
-import { addDays, daysBetween } from "./date.ts";
+import { addDays, DAY_MS, daysBetween, MINUTE_MS } from "./date.ts";
 import { TIMEZONE, todayInZone } from "./time.ts";
 import { isMilkFeed, normalizeAll, type NormalizedRecord } from "./records.ts";
 import type { PiyoRecord } from "./types.ts";
 
-const MINUTE_MS = 60_000;
-const DAY_MS = 86_400_000;
 /** A longer gap means a WakeUp or Sleep was probably not recorded. */
 const MAX_SLEEP_MS = 14 * 60 * MINUTE_MS;
 /** Feeds that start this close together count as one session. */
